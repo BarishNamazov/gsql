@@ -1,7 +1,8 @@
 import { compile } from "@barishnamazov/gsql/src/compiler";
 import examples from "./examples.json";
 import { EditorView, basicSetup } from "codemirror";
-import { keymap, ViewUpdate } from "@codemirror/view";
+import type { ViewUpdate } from "@codemirror/view";
+import { keymap } from "@codemirror/view";
 import { sql } from "@codemirror/lang-sql";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorState, Prec } from "@codemirror/state";

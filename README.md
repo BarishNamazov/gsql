@@ -243,13 +243,6 @@ This is a monorepo with multiple packages:
 - **`packages/gsql`** - Core library and CLI (published as `@barishnamazov/gsql`)
 - **`packages/playground`** - Browser-based playground
 
-### Setup
-
-```bash
-# Install dependencies for all packages
-npm install
-```
-
 ### Building
 
 ```bash
@@ -266,19 +259,13 @@ npm run build:playground
 ### Testing
 
 ```bash
-# Run tests
 npm test
 ```
 
 ### Playground Development
 
 ```bash
-# Start the playground dev server
 npm run dev:playground
-
-# Or manually
-cd packages/playground
-npm run dev
 ```
 
 After building, open `packages/playground/dist/index.html` in your browser.
@@ -286,13 +273,8 @@ After building, open `packages/playground/dist/index.html` in your browser.
 ### Linting and Formatting
 
 ```bash
-# Lint all packages
 npm run lint
-
-# Format all packages
 npm run format
-
-# Type check all packages
 npm run typecheck:all
 ```
 
