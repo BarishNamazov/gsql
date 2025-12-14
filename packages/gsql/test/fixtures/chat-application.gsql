@@ -1,0 +1,144 @@
+// GSQL Example: Chat Application
+// Real-time messaging with rooms, messages, and read receipts
+
+// --------------------------------------------------------
+// 1. Setup & Utilities
+// --------------------------------------------------------
+
+func set_updated_at() -> trigger {
+    NEW.updated_at = NOW();
+    return NEW;
+}
+
+extension citext;
+
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+    trigger set_updated_at before update on each row execute function set_updated_at();
+}
+
+// --------------------------------------------------------
+// 2. Modular Concepts
+// --------------------------------------------------------
+
+// Identity: Standard user management
+concept Identity {
+    enum status { online; away; busy; offline; }
+
+    schema Accounts mixin Timestamps {
+        id serial pkey;
+        email citext nonull;
+        username varchar(50) nonull;
+
+        display_name varchar(100);
+        avatar_url varchar(500);
+
+        current_status status nonull default(offline);
+        last_seen_at timestamptz;
+
+        index(email) unique;
+        index(username) unique;
+    }
+}
+
+// Grouping: Defines a container and who belongs to it
+// Generic naming allows this to be 'Rooms', 'Teams', or 'Clubs'
+concept Grouping<Member> {
+    enum type { direct; group; public; private; }
+
+    schema Containers mixin Timestamps {
+        id serial pkey;
+        name varchar(100);
+        description text;
+        type type nonull default(group);
+        avatar_url varchar(500);
+        is_archived boolean nonull default(false);
+    }
+
+    schema Memberships mixin Timestamps {
+        id serial pkey;
+        // Refers to the Container (e.g., room_id)
+        container_id integer nonull ref(Containers.id) ondelete(cascade);
+        // Refers to the User (e.g., user_id)
+        {Member}_id integer nonull ref(Member.id) ondelete(cascade);
+
+        role varchar(20) nonull default('member');
+        last_read_at timestamptz;
+
+        index(container_id, {Member}_id) unique;
+        index({Member}_id);
+    }
+}
+
+// Conversation: An append-only log of content linked to a context
+concept Conversation<Context, Author> {
+    enum kind { text; image; file; system; }
+
+    schema Messages mixin Timestamps {
+        id serial pkey;
+        // The "Context" is the Room (or potentially a Post/Document)
+        {Context}_id integer nonull ref(Context.id) ondelete(cascade);
+        {Author}_id integer ref(Author.id) ondelete(setnull);
+
+        kind kind nonull default(text);
+        content text nonull;
+
+        attachments jsonb;
+        metadata jsonb;
+
+        // Self-referential FK for threading
+        reply_to_id integer ref(Messages.id) ondelete(setnull);
+
+        edited_at timestamptz;
+        deleted_at timestamptz;
+
+        index({Context}_id, created_at); // Optimized for loading history
+        index({Author}_id);
+    }
+}
+
+// Engagement: Reaction/Emoji generic
+concept Engagement<Target, Actor> {
+    schema Reactions mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Actor}_id integer nonull ref(Actor.id) ondelete(cascade);
+        emoji varchar(20) nonull;
+
+        index({Target}_id, {Actor}_id, emoji) unique;
+    }
+}
+
+// Tracking: Simple acknowledgment logs (Read receipts, View logs)
+concept Tracking<Target, Actor> {
+    schema Receipts {
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Actor}_id integer nonull ref(Actor.id) ondelete(cascade);
+        read_at timestamptz nonull default(NOW());
+
+        index({Target}_id, {Actor}_id) unique;
+    }
+}
+
+// --------------------------------------------------------
+// 3. System Instantiation
+// --------------------------------------------------------
+
+// 1. Create Users
+users = Identity;
+
+// 2. Create Rooms and Room Memberships
+// 'Grouping' generates two schemas. We map them to 'rooms' and 'room_members'.
+// We implicitly reference the internal schema 'Containers' via the concept logic.
+rooms, room_members = Grouping<users[user]>;
+
+// 3. Create Messages
+// The Context is 'rooms', the Author is 'users' (aliased as sender)
+messages = Conversation<rooms[room], users[sender]>;
+
+// 4. Create Reactions
+message_reactions = Engagement<messages[message], users[user]>;
+
+// 5. Create Read Receipts
+read_receipts = Tracking<messages[message], users[reader]>;

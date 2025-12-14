@@ -1,0 +1,312 @@
+// GSQL Example: Exam Platform
+// A production-ready database schema for hosting exams.
+
+func set_updated_at() -> trigger {
+    NEW.updated_at = NOW();
+    return NEW;
+}
+
+extension citext;
+
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+
+    // Applies to all schemas mixing in Timestamps
+    trigger set_updated_at before update on each row execute function set_updated_at();
+}
+
+// ===
+
+concept TemporaryTokening<Subject> {
+    schema Tokens {
+        token_hash text pkey;
+        expires_at timestamptz nonull;
+        {Subject}_id integer nonull ref(Subject.id);
+
+        index({Subject}_id);
+    }
+}
+
+// ===
+
+concept TimeBounding<Target> {
+    schema Times mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+
+        starts_at timestamptz nonull;
+        ends_at timestamptz nonull;
+        duration_minutes integer;
+
+        check(ends_at > starts_at);
+
+        index({Target}_id) unique;
+        index(starts_at);
+        index(ends_at);
+    }
+}
+
+// ===
+
+concept Announcing<Target, Author> {
+    schema Announcements mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Author}_id integer nonull ref(Author.id) ondelete(restrict);
+
+        title varchar(255);
+        content text nonull;
+
+        index({Target}_id);
+    }
+}
+
+// ===
+
+concept Registering<Event, Participant, Registrar> {
+    enum registration_type {
+        self_register_free;
+        self_register_password;
+        manual;
+    }
+
+    schema RegistrationOptions mixin Timestamps {
+        {Event}_id integer pkey ref(Event.id) ondelete(cascade);
+
+        registration_type registration_type nonull default(self_register_free);
+        registration_password text;
+
+        check(
+            (registration_type = registration_type::self_register_password
+                and registration_password is not null)
+            or
+            (registration_type in (registration_type::self_register_free, registration_type::manual)
+                and registration_password is null)
+        );
+    }
+
+    schema Registrations mixin Timestamps {
+        id serial pkey;
+        {Event}_id integer nonull ref(Event.id) ondelete(cascade);
+        {Participant}_id integer nonull ref(Participant.id) ondelete(cascade);
+        {Registrar}_id integer nonull ref(Registrar.id) ondelete(restrict);
+
+        index({Event}_id, {Participant}_id) unique;
+        index({Event}_id);
+        index({Participant}_id);
+    }
+}
+
+// ===
+
+concept Assessing<Author> {
+    enum assessment_status {
+        draft;
+        published;
+        archived;
+    }
+
+    enum result_visibility {
+        immediate;
+        manual;
+        at_given_time;
+    }
+
+    enum feedback_visibility {
+        no_feedback;
+        only_score;
+        full_feedback;
+    }
+
+    schema Assessments mixin Timestamps {
+        id serial pkey;
+        {Author}_id integer nonull ref(Author.id) ondelete(restrict);
+
+        title varchar(255) nonull;
+
+        description text nonull default('');
+        instructions text nonull default('');
+
+        status assessment_status nonull default(draft);
+
+        shuffle_questions boolean nonull default(false);
+        shuffle_options boolean nonull default(false);
+
+        // How scores will be visible to participants.
+        result_visibility result_visibility nonull default(immediate);
+
+        // What will be shown with results.
+        feedback_visibility feedback_visibility nonull default(full_feedback);
+
+        // If result_visibility is immediate/manual, this is the actual time of
+        // release time. Otherwise it's the expected (future) time of release.
+        results_released_at timestamptz;
+
+        attempt_limit integer nonull default(1);
+
+        index({Author}_id);
+        index(status);
+    }
+
+    enum question_type {
+        single_choice;
+        multiple_choice;
+        short_text;
+        long_text;
+        numerical;
+        matching;
+    }
+
+    schema Questions mixin Timestamps {
+        id serial pkey;
+        {Assessments}_id integer nonull ref(Assessments.id) ondelete(cascade);
+        {Author}_id integer nonull ref(Author.id) ondelete(restrict);
+
+        content text nonull;
+        question_type question_type nonull;
+
+        answer_options jsonb;
+        correct_answer jsonb;
+
+        points integer;
+
+        tags jsonb;
+
+        // order of question within the assessment
+        position integer nonull;
+
+        index({Assessments}_id);
+        index(tags) gin;
+        index({Assessments}_id, position) unique;
+
+        check(points is null or points >= 0);
+    }
+}
+
+// ===
+
+concept ExamSubmitting<Form, Question, Participant> {
+    enum submission_status {
+        in_progress;
+        submitted;
+        auto_submitted;
+    }
+
+    schema Submissions mixin Timestamps {
+        id serial pkey;
+        {Participant}_id integer nonull ref(Participant.id) ondelete(restrict);
+        {Form}_id integer nonull ref(Form.id) ondelete(restrict);
+
+        status submission_status nonull default(in_progress);
+        submitted_at timestamptz;
+
+        index({Participant}_id);
+        index({Form}_id);
+        index(status);
+        index({Form}_id, {Participant}_id);
+
+        check(
+            (status = submission_status::in_progress and submitted_at is null)
+            or (status in (submission_status::submitted, submission_status::auto_submitted) and submitted_at is not null)
+        );
+    }
+
+    schema Responses mixin Timestamps {
+        id serial pkey;
+        submission_id integer nonull ref(Submissions.id) ondelete(cascade);
+        {Question}_id integer nonull ref(Question.id) ondelete(restrict);
+        response jsonb;
+
+        index(submission_id, {Question}_id) unique;
+        index(submission_id);
+    }
+}
+
+// ===
+
+concept Grading<Submission, Response, Grader> {
+    enum grading_status {
+        auto_graded;
+        pending_manual;
+        fully_graded;
+    }
+
+    schema SubmissionGrades mixin Timestamps {
+        {Submission}_id integer pkey ref(Submission.id) ondelete(cascade);
+        total_score decimal nonull;
+        overall_feedback text;
+        status grading_status nonull default(auto_graded);
+
+        index(status);
+    }
+
+    // Only for manual grading
+    schema ResponseGrades mixin Timestamps {
+        {Response}_id integer pkey ref(Response.id) ondelete(cascade);
+        {Grader}_id integer nonull ref(Grader.id) ondelete(restrict);
+        score decimal nonull;
+        feedback text;
+
+        check(score >= 0);
+    }
+}
+
+// ===
+
+concept Authing {
+    enum user_role {
+        admin;
+        user;
+    }
+
+    schema Users mixin Timestamps {
+        id serial pkey;
+        email citext nonull;
+        password_hash text nonull;
+        role user_role nonull default(user);
+        email_verified boolean nonull default(false);
+
+        first_name varchar(100) nonull;
+        last_name varchar(100) nonull;
+
+        index(email) unique;
+    }
+}
+
+// ===
+
+concept Sessioning<User> {
+    schema Sessions {
+        id serial pkey;
+        {User}_id integer nonull ref(User.id) ondelete(cascade);
+
+        last_activity_at timestamptz nonull default(NOW());
+        user_agent text;
+        ip_address inet;
+    }
+}
+
+// ====================================================================
+
+users = Authing;
+email_verification_tokens = TemporaryTokening<users[user]>;
+password_reset_tokens = TemporaryTokening<users[user]>;
+
+sessions = Sessioning<users>;
+session_tokens = TemporaryTokening<sessions[session]>;
+
+exams[exam], questions = Assessing<users>;
+
+exam_submissions, exam_submission_responses =
+    ExamSubmitting<exams[exam], questions, users[user]>;
+
+exam_timings = TimeBounding<exams[exam]>;
+
+exam_announcements = Announcing<exams[exam], users[author]>;
+
+exam_registration_options, exam_registrations =
+    Registering<exams[exam], users[participant], users[registrar]>;
+
+exam_submission_grades, exam_response_grades =
+    Grading<exam_submissions, exam_submission_responses, users[grader]>;

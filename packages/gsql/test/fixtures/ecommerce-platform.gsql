@@ -1,0 +1,196 @@
+// GSQL Example: E-commerce Platform
+// An e-commerce schema with products, orders, and reviews
+
+// --------------------------------------------------------
+// 1. Setup & Utilities
+// --------------------------------------------------------
+
+func set_updated_at() -> trigger {
+    NEW.updated_at = NOW();
+    return NEW;
+}
+
+extension citext;
+
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+    trigger set_updated_at before update on each row execute function set_updated_at();
+}
+
+// --------------------------------------------------------
+// 2. Modular Concepts
+// --------------------------------------------------------
+
+// Identity: Standard user/actor management
+concept Identity {
+    enum role { customer; vendor; admin; }
+
+    schema Actors mixin Timestamps {
+        id serial pkey;
+        email citext nonull;
+        password_hash text nonull;
+        role role nonull default(customer);
+
+        first_name varchar(100);
+        last_name varchar(100);
+
+        index(email) unique;
+        index(role);
+    }
+}
+
+// Hierarchy: Generic tree structure (Categories, Org Charts, etc.)
+concept Hierarchy {
+    schema Nodes mixin Timestamps {
+        id serial pkey;
+        name varchar(100) nonull;
+        slug varchar(100) nonull;
+        // Self-referential for tree structure
+        parent_id integer ref(Nodes.id) ondelete(setnull);
+
+        index(slug) unique;
+        index(parent_id);
+    }
+}
+
+// Inventory: Managing items for sale
+concept Inventory<Owner, Category> {
+    enum status { draft; active; out_of_stock; discontinued; }
+
+    schema Items mixin Timestamps {
+        id serial pkey;
+        {Owner}_id integer nonull ref(Owner.id) ondelete(restrict);
+        {Category}_id integer ref(Category.id) ondelete(setnull);
+
+        name varchar(255) nonull;
+        slug varchar(255) nonull;
+        description text default('');
+
+        price decimal nonull;
+        stock_quantity integer nonull default(0);
+        status status nonull default(draft);
+
+        // Data blobs
+        images jsonb default('[]');
+        attributes jsonb default('{}');
+
+        check(price >= 0);
+        check(stock_quantity >= 0);
+
+        index(slug) unique;
+        index({Owner}_id);
+        index({Category}_id);
+        index(attributes) gin;
+    }
+}
+
+// Acquisition: Pre-purchase accumulation (Carts, Wishlists)
+concept Acquisition<Actor, Item> {
+    schema Collections mixin Timestamps {
+        id serial pkey;
+        {Actor}_id integer nonull ref(Actor.id) ondelete(cascade);
+        index({Actor}_id) unique; // One cart per user
+    }
+
+    schema CollectionItems mixin Timestamps {
+        id serial pkey;
+        collection_id integer nonull ref(Collections.id) ondelete(cascade);
+        {Item}_id integer nonull ref(Item.id) ondelete(cascade);
+        quantity integer nonull default(1);
+
+        check(quantity > 0);
+        index(collection_id, {Item}_id) unique;
+    }
+}
+
+// Commerce: The immutable record of transactions
+concept Commerce<Buyer, Item> {
+    enum state { pending; paid; shipped; delivered; cancelled; }
+
+    schema Invoices mixin Timestamps {
+        id serial pkey;
+        {Buyer}_id integer nonull ref(Buyer.id) ondelete(restrict);
+
+        invoice_number varchar(50) nonull;
+        state state nonull default(pending);
+
+        // Financials
+        subtotal decimal nonull;
+        tax decimal nonull default(0);
+        total decimal nonull;
+
+        // Logistics
+        shipping_address jsonb;
+        billing_address jsonb;
+
+        index(invoice_number) unique;
+        index({Buyer}_id);
+        index(state);
+    }
+
+    schema LineItems {
+        id serial pkey;
+        invoice_id integer nonull ref(Invoices.id) ondelete(cascade);
+        {Item}_id integer nonull ref(Item.id) ondelete(restrict);
+
+        quantity integer nonull;
+        unit_price decimal nonull;
+        total_price decimal nonull; // Snapshot of price at time of purchase
+
+        check(quantity > 0);
+    }
+}
+
+// Feedback: Generic rating system (REUSABLE)
+// Can be used for: Product Reviews, Seller Ratings, Driver Feedback, etc.
+concept Feedback<Subject, Critic> {
+    schema Ratings mixin Timestamps {
+        id serial pkey;
+        {Subject}_id integer nonull ref(Subject.id) ondelete(cascade);
+        {Critic}_id integer nonull ref(Critic.id) ondelete(cascade);
+
+        score integer nonull;
+        title varchar(100);
+        comment text;
+
+        is_verified boolean default(false);
+
+        check(score >= 1);
+        check(score <= 5);
+
+        index({Subject}_id);
+        index({Critic}_id);
+        // Ensure one review per critic per subject
+        index({Subject}_id, {Critic}_id) unique;
+    }
+}
+
+// --------------------------------------------------------
+// 3. System Instantiation
+// --------------------------------------------------------
+
+// 1. Core Entities
+users = Identity;
+categories = Hierarchy;
+
+// 2. Products
+// Links Users (as Vendor) and Categories
+products = Inventory<users[vendor], categories[category]>;
+
+// 3. Shopping Carts
+// Links Users (as Customer) and Products
+carts, cart_items = Acquisition<users[customer], products[product]>;
+
+// 4. Orders
+// Links Users (as Customer) and Products
+orders, order_items = Commerce<users[customer], products[product]>;
+
+// 5. Product Reviews (Feedback Instance 1)
+// Subject: Product, Critic: User (Customer)
+product_reviews = Feedback<products[product], users[customer]>;
+
+// 6. Vendor Ratings (Feedback Instance 2 - REUSE)
+// Subject: User (Vendor), Critic: User (Customer)
+// This reuses the exact same schema logic for a completely different use case
+vendor_ratings = Feedback<users[vendor], users[customer]>;

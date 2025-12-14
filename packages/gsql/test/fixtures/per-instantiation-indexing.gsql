@@ -1,0 +1,37 @@
+// GSQL Example: Per-Instantiation Indexing
+// Demonstrates adding indexes to instantiated tables after creation
+
+func set_updated_at() -> trigger {
+    NEW.updated_at = NOW();
+    return NEW;
+}
+
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+
+    trigger set_updated_at before update on each row execute function set_updated_at();
+}
+
+concept Announcing<Target> {
+    schema Announcements mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        message text nonull;
+
+        index({Target}_id);
+    }
+}
+
+schema Posts mixin Timestamps {
+    id serial pkey;
+    title varchar(255) nonull;
+    content text nonull;
+}
+
+posts = Posts;
+post_announcements = Announcing<posts[post]>;
+
+// Per-instantiation indexes: add indexes to specific instantiated tables
+index(post_announcements, created_at);
+index(post_announcements, message) gin;

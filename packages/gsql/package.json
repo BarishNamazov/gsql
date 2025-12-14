@@ -1,0 +1,50 @@
+{
+  "name": "@barishnamazov/gsql",
+  "version": "0.1.0",
+  "description": "Generic SQL - Parametric Polymorphism for SQL Schemas",
+  "module": "src/index.ts",
+  "type": "module",
+  "main": "dist/gsql.js",
+  "bin": {
+    "gsql": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "npm run build:lib && npm run build:cli && npm run make-cli-executable",
+    "build:lib": "esbuild src/index.ts --bundle --outdir=dist --format=esm --platform=browser --minify --external:chevrotain",
+    "build:cli": "esbuild src/cli.ts --bundle --outfile=dist/cli.js --format=esm --platform=node --minify",
+    "make-cli-executable": "echo '#!/usr/bin/env node' | cat - dist/cli.js > dist/cli.tmp && mv dist/cli.tmp dist/cli.js && chmod +x dist/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write --check \"src/**/*.ts\" \"test/**/*.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "chevrotain": "^11.0.3"
+  },
+  "keywords": [
+    "sql",
+    "schema",
+    "generics",
+    "database",
+    "postgres",
+    "compiler"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BarishNamazov/gsql-dev",
+    "directory": "packages/gsql"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ]
+}

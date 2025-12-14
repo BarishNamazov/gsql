@@ -1,0 +1,207 @@
+// GSQL Example: Task Management (Kanban Board)
+// Project management with boards, columns, cards, and assignments
+
+// --------------------------------------------------------
+// 1. Setup & Utilities
+// --------------------------------------------------------
+
+func set_updated_at() -> trigger {
+    NEW.updated_at = NOW();
+    return NEW;
+}
+
+extension citext;
+
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+    trigger set_updated_at before update on each row execute function set_updated_at();
+}
+
+// --------------------------------------------------------
+// 2. Modular Concepts
+// --------------------------------------------------------
+
+// Identity: Basic user profile
+concept Identity {
+    schema Profiles mixin Timestamps {
+        id serial pkey;
+        email citext nonull;
+        password_hash text nonull;
+
+        name varchar(100) nonull;
+        avatar_url varchar(500);
+
+        index(email) unique;
+    }
+}
+
+// Collaboration: Defines a secured space and its participants
+concept Collaboration<Owner, Member> {
+    schema Spaces mixin Timestamps {
+        id serial pkey;
+        {Owner}_id integer nonull ref(Owner.id) ondelete(restrict);
+
+        name varchar(100) nonull;
+        description text;
+        color varchar(7) default('#3b82f6');
+        is_archived boolean nonull default(false);
+
+        index({Owner}_id);
+    }
+
+    schema Memberships mixin Timestamps {
+        id serial pkey;
+        space_id integer nonull ref(Spaces.id) ondelete(cascade);
+        {Member}_id integer nonull ref(Member.id) ondelete(cascade);
+
+        // Roles could be an enum, strictly keeping it varchar for flexibility here
+        role varchar(20) nonull default('member');
+
+        index(space_id, {Member}_id) unique;
+        index(space_id);
+    }
+}
+
+// Workflow: Defines the state machine (Board -> Columns)
+concept Workflow<Context> {
+    schema Pipelines mixin Timestamps {
+        id serial pkey;
+        {Context}_id integer nonull ref(Context.id) ondelete(cascade);
+
+        name varchar(100) nonull;
+        position integer nonull default(0);
+
+        index({Context}_id);
+    }
+
+    schema Stages mixin Timestamps {
+        id serial pkey;
+        pipeline_id integer nonull ref(Pipelines.id) ondelete(cascade);
+
+        name varchar(50) nonull;
+        color varchar(7);
+        position integer nonull default(0);
+        wip_limit integer;
+
+        check(wip_limit is null or wip_limit > 0);
+
+        index(pipeline_id);
+        index(pipeline_id, position);
+    }
+}
+
+// Tracker: The actual units of work
+concept Tracker<Stage, Creator> {
+    enum priority { low; medium; high; urgent; }
+
+    schema Items mixin Timestamps {
+        id serial pkey;
+        {Stage}_id integer nonull ref(Stage.id) ondelete(cascade);
+        {Creator}_id integer nonull ref(Creator.id) ondelete(restrict);
+
+        title varchar(255) nonull;
+        description text;
+        priority priority nonull default(medium);
+
+        due_date timestamptz;
+        position integer nonull default(0);
+
+        labels jsonb default('[]');
+        cover_color varchar(7);
+
+        index({Stage}_id);
+        index({Stage}_id, position); // For drag-and-drop ordering
+        index({Creator}_id);
+        index(due_date);
+        index(labels) gin;
+    }
+}
+
+// Assignment: Linking users to items
+concept Assignment<Target, Agent> {
+    schema Allocations {
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Agent}_id integer nonull ref(Agent.id) ondelete(cascade);
+
+        index({Target}_id, {Agent}_id) unique;
+        index({Agent}_id);
+    }
+}
+
+// Breakdown: Recursive sub-tasks
+concept Breakdown<Target> {
+    schema Lists mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+
+        title varchar(100) nonull;
+        position integer nonull default(0);
+        index({Target}_id);
+    }
+
+    schema Entries mixin Timestamps {
+        id serial pkey;
+        {Lists}_id integer nonull ref(Lists.id) ondelete(cascade);
+
+        content varchar(255) nonull;
+        is_completed boolean nonull default(false);
+        position integer nonull default(0);
+
+        index({Lists}_id);
+    }
+}
+
+// History: Audit logging
+concept History<Target, Actor> {
+    enum type { create; update; move; comment; delete; }
+
+    schema Events mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Actor}_id integer ref(Actor.id) ondelete(setnull);
+
+        type type nonull;
+        summary text; // Human readable string
+        payload jsonb; // Machine readable diff
+
+        index({Target}_id, created_at);
+        index({Actor}_id);
+    }
+}
+
+// --------------------------------------------------------
+// 3. System Instantiation
+// --------------------------------------------------------
+
+// 1. Users
+users = Identity;
+
+// 2. Projects & Members
+// Maps 'Spaces' -> 'projects', 'Memberships' -> 'project_members'
+projects, project_members = Collaboration<users[owner], users[member]>;
+
+// 3. Boards & Columns
+// Maps 'Pipelines' -> 'boards', 'Stages' -> 'columns'
+boards, columns = Workflow<projects[project]>;
+
+// 4. Tasks (Cards)
+// Maps 'Items' -> 'cards'
+cards = Tracker<columns[column], users[creator]>;
+
+// 5. Card Assignees
+// Reuse Assignment concept
+card_assignees = Assignment<cards[card], users[assignee]>;
+
+// 6. Checklists
+// Reuse Breakdown concept. Maps 'Lists' -> 'checklists', 'Entries' -> 'checklist_items'
+checklists[checklist], checklist_items = Breakdown<cards[card]>;
+
+// 7. Card Activity Log (Instance 1)
+// Tracks what happens on a specific card
+card_activity = History<cards[card], users[user]>;
+
+// 8. Project Audit Log (Instance 2 - REUSE)
+// Tracks admin actions on the project (e.g. "User X added User Y")
+// This reuses the exact same schema structure as card activity
+project_audit = History<projects[project], users[admin]>;

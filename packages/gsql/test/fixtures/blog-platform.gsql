@@ -1,0 +1,144 @@
+// GSQL Example: Blog Platform
+// A multi-author blog with posts, comments, tags, and likes.
+
+// --------------------------------------------------------
+// 1. Setup & Utilities
+// --------------------------------------------------------
+
+func set_updated_at() -> trigger {
+    NEW.updated_at = NOW();
+    return NEW;
+}
+
+extension citext;
+
+// Reusable mixin for audit trails
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+    trigger set_updated_at before update on each row execute function set_updated_at();
+}
+
+// --------------------------------------------------------
+// 2. Modular Concepts
+// --------------------------------------------------------
+
+// Identity: Handles user management independent of what they do
+concept Identity {
+    enum role { reader; author; admin; }
+
+    schema Accounts mixin Timestamps {
+        id serial pkey;
+        email citext nonull;
+        username varchar(50) nonull;
+        role role nonull default(reader);
+
+        // Profile data
+        display_name varchar(100);
+        bio text;
+
+        index(email) unique;
+        index(username) unique;
+    }
+}
+
+// Publishing: Handles the core content creation
+concept Publishing<Author> {
+    enum state { draft; published; archived; }
+
+    schema Articles mixin Timestamps {
+        id serial pkey;
+        {Author}_id integer nonull ref(Author.id) ondelete(restrict);
+
+        title varchar(255) nonull;
+        slug varchar(255) nonull;
+        body text nonull;
+        state state nonull default(draft);
+
+        index(slug) unique;
+        index({Author}_id);
+        index(state);
+    }
+}
+
+// Taxonomy: Defines a dictionary of tags/categories
+concept Taxonomy {
+    schema Terms mixin Timestamps {
+        id serial pkey;
+        name varchar(50) nonull;
+        slug varchar(50) nonull;
+        index(slug) unique;
+    }
+}
+
+// Categorization: A generic Many-to-Many linker
+// Reusable for: PostTags, UserInterests, PhotoTags, etc.
+concept Categorization<Target, Term> {
+    schema Links {
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Term}_id integer nonull ref(Term.id) ondelete(cascade);
+
+        // Composite PK is often better for join tables,
+        // but GSQL syntax implies explicit PKEYs usually.
+        // We use a unique index on the pair instead.
+        index({Target}_id, {Term}_id) unique;
+        index({Term}_id);
+    }
+}
+
+// Discussion: Threaded conversations
+concept Discussion<Target, Author> {
+    schema Threads mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Author}_id integer ref(Author.id) ondelete(setnull); // Keep comment if user deleted
+
+        body text nonull;
+        is_approved boolean default(true);
+
+        index({Target}_id);
+        index({Author}_id);
+    }
+}
+
+// Engagement: Binary reactions (Likes, Upvotes, Flags)
+// Reusable for: PostLikes, CommentLikes, etc.
+concept Engagement<Target, Actor> {
+    schema Reactions mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Actor}_id integer nonull ref(Actor.id) ondelete(cascade);
+
+        // Ensure one reaction per actor per target
+        index({Target}_id, {Actor}_id) unique;
+        index({Actor}_id);
+    }
+}
+
+// --------------------------------------------------------
+// 3. System Instantiation (The Wiring)
+// --------------------------------------------------------
+
+// 1. Create the base entities
+users = Identity;
+tags = Taxonomy;
+
+// 2. Create the content (Articles), relating to users via 'author' alias
+// "posts" table will have "author_id"
+posts = Publishing<users[author]>;
+
+// 3. Connect Tags to Posts using the generic Categorization concept
+// "post_tags" table will have "post_id" and "tag_id"
+post_tags = Categorization<posts[post], tags[tag]>;
+
+// 4. Create Comments on Posts
+// "comments" table will have "post_id" and "author_id"
+comments = Discussion<posts[post], users[author]>;
+
+// 5. Reuse Engagement concept for two different purposes
+// "post_likes" table: links posts + users
+post_likes = Engagement<posts[post], users[user]>;
+
+// "comment_likes" table: links comments + users
+// This demonstrates the power of generics: 'Target' is now 'comments'
+comment_likes = Engagement<comments[comment], users[user]>;

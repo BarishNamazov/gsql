@@ -1,0 +1,32 @@
+# dependencies
+node_modules
+package-lock.json
+
+# output
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# Test artifacts
+*.generated.sql
+
+# Generated playground files
+packages/playground/examples.json
+
+# Package-specific build outputs
+packages/*/dist
+packages/*/node_modules

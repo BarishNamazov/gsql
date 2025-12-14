@@ -1,0 +1,43 @@
+{
+  "name": "gsql-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generic SQL - Parametric Polymorphism for SQL Schemas",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build:gsql && npm run build:playground",
+    "build:gsql": "cd packages/gsql && npm run build",
+    "build:playground": "cd packages/playground && npm run build",
+    "dev:playground": "cd packages/playground && npm run dev",
+    "test": "cd packages/gsql && npm test",
+    "lint": "eslint packages/",
+    "format": "prettier --write --check .",
+    "typecheck": "cd packages/gsql && npm run typecheck",
+    "typecheck:all": "cd packages/gsql && npm run typecheck && cd ../playground && npx tsc --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@typescript-eslint/eslint-plugin": "^8.19.1",
+    "@typescript-eslint/parser": "^8.19.1",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.49.0"
+  },
+  "keywords": [
+    "sql",
+    "schema",
+    "generics",
+    "database",
+    "postgres",
+    "compiler"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BarishNamazov/gsql-dev"
+  }
+}
