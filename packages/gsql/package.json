@@ -4,7 +4,7 @@
   "description": "Generic SQL - Parametric Polymorphism for SQL Schemas",
   "module": "src/index.ts",
   "type": "module",
-  "main": "dist/gsql.js",
+  "main": "dist/index.js",
   "bin": {
     "gsql": "dist/cli.js"
   },
