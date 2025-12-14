@@ -3,15 +3,102 @@
 **Parametric polymorphism for SQL schemas**
 
 GSQL is a domain-specific language that brings the power of generics/templates to database schemas.
-Define common patterns once, instantiate them anywhere.
+Define common patterns once, instantiate them freely.
 
-## Features
+> Read the background story:
+> [Parametric Polymorphism for SQL](https://barish.me/blog/parametric-polymorphism-for-sql/)
 
+## The Problem
+
+When building relational databases, you often need to duplicate table structures with minor
+variations. For example, in a learning management system, you might need announcements for courses,
+lessons, and exams—the same pattern repeated three times.
+
+Current solutions force you to choose between:
+
+- **Separate tables** - Violates DRY principles, leads to maintenance nightmares
+- **Polymorphic associations** - Sacrifices foreign key integrity and type safety
+
+GSQL solves this by letting you define reusable schema templates (concepts) that compile to
+PostgreSQL with proper foreign key constraints.
+
+## Quick Example
+
+Here is the "LMS Dilemma" (Courses, Lessons, Exams) solved with GSQL. We define an `Announcing`
+pattern once and apply it to three different tables, generating strictly typed foreign keys for
+each.
+
+```
+// Define reusable patterns (Mixins)
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+}
+
+// Define a Generic Concept
+// Accepts a 'Target' type parameter to create a relationship
+concept Announcing<Target> {
+    schema Announcements mixin Timestamps {
+        id serial pkey;
+
+        // Template variables: {Target}_id becomes course_id, lesson_id, etc.
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+
+        title text nonull;
+        body text nonull;
+
+        index({Target}_id);
+    }
+}
+
+// Define Concrete Schemas (in actual app these would also be concepts with generics)
+schema Courses mixin Timestamps { id serial pkey; name text; }
+schema Lessons mixin Timestamps { id serial pkey; topic text; }
+schema Exams   mixin Timestamps { id serial pkey; score int; }
+
+// Actually create tables by instantiating the Schemas/Concepts
+courses = Courses;
+lessons = Lessons;
+exams   = Exams;
+
+// Create specific announcement tables for each entity
+course_announcements = Announcing<courses[course]>;
+lesson_announcements = Announcing<lessons[lesson]>;
+exam_announcements   = Announcing<exams[exam]>;
+
+// Add per-instance indexes if needed
+index(course_announcements, created_at);
+```
+
+This generates three announcement tables with proper foreign keys:
+
+```sql
+CREATE TABLE course_announcements (
+    id serial PRIMARY KEY,
+    course_id integer NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    title text NOT NULL,
+    body text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    updated_at timestamptz NOT NULL DEFAULT NOW()
+);
+CREATE INDEX ON course_announcements (course_id);
+--- ...
+```
+
+## Key Features
+
+- **Schemas**: A table definition with columns, constraints, indexes, triggers
 - **Concepts**: Generic schema templates with type parameters
 - **Mixins**: Compose reusable schema fragments
 - **Template variables**: Automatic field name expansion
+- **Sibling references**: Multiple schemas within one concept can reference each other
 - **Per-instance indexes**: Add indexes after instantiation
 - **Type-safe foreign keys**: Proper FK constraints for polymorphic patterns
+- **PostgreSQL output**: Compiles to PostgreSQL, integrates with migration tools like Atlas
+
+## Try It Out
+
+Try GSQL in your browser with the [online playground](https://gsql.barish.me).
 
 ## Installation
 
@@ -53,45 +140,6 @@ if (result.success) {
 const sql = compileToSQL(source);
 ```
 
-## Quick Example
-
-```gsql
-// Reusable timestamp pattern
-schema Timestamps {
-    created_at timestamptz nonull default(NOW());
-    updated_at timestamptz nonull default(NOW());
-}
-
-// Generic concept for announcements
-concept Announcing<Target> {
-    schema Announcements mixin Timestamps {
-        id serial pkey;
-        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
-        message text nonull;
-
-        index({Target}_id);
-    }
-}
-
-// Concrete tables
-schema Posts {
-    id serial pkey;
-    title varchar(255);
-}
-
-posts = Posts;
-post_announcements = Announcing<posts[post]>;
-
-// Per-instance indexes
-index(post_announcements, created_at);
-```
-
-This generates proper SQL with:
-
-- A `posts` table
-- A `post_announcements` table with a `post_id` foreign key
-- Proper indexes and constraints
-
 ## Syntax Reference
 
 ### Schemas
@@ -108,16 +156,24 @@ schema Name mixin Mixin1, Mixin2 {
 ### Concepts
 
 ```gsql
-concept Name<TypeParam1, TypeParam2> {
-    enum status { active; inactive; }
+concept Tagging<Target> {
+    schema Tags {
+        id serial pkey;
+        name text;
+    }
 
-    schema Table {
-        {TypeParam1}_id integer ref(TypeParam1.id);
+    schema Taggings {
+        {Target}_id integer ref(Target.id);
+        {Tags}_id integer ref(Tags.id); // sibling reference
+        index({Target}_id, {Tags}_id) unique;
     }
 }
-```
 
-**Template Variables:** Use uppercase type parameter names in curly braces (e.g., `{Target}_id`, `{Author}_id`).
+users = Users;
+// {Target}_id becomes user_id
+// {Tags}_id becomes user_tag_id
+user_tags[user_tag], user_taggings = Tagging<users[user]>;
+```
 
 ### Instantiation
 
