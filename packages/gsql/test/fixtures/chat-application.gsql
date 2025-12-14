@@ -59,14 +59,14 @@ concept Grouping<Member> {
     schema Memberships mixin Timestamps {
         id serial pkey;
         // Refers to the Container (e.g., room_id)
-        container_id integer nonull ref(Containers.id) ondelete(cascade);
+        {Containers}_id integer nonull ref(Containers.id) ondelete(cascade);
         // Refers to the User (e.g., user_id)
         {Member}_id integer nonull ref(Member.id) ondelete(cascade);
 
         role varchar(20) nonull default('member');
         last_read_at timestamptz;
 
-        index(container_id, {Member}_id) unique;
+        index({Containers}_id, {Member}_id) unique;
         index({Member}_id);
     }
 }
@@ -131,7 +131,7 @@ users = Identity;
 // 2. Create Rooms and Room Memberships
 // 'Grouping' generates two schemas. We map them to 'rooms' and 'room_members'.
 // We implicitly reference the internal schema 'Containers' via the concept logic.
-rooms, room_members = Grouping<users[user]>;
+rooms[room], room_members = Grouping<users[user]>;
 
 // 3. Create Messages
 // The Context is 'rooms', the Author is 'users' (aliased as sender)
@@ -142,3 +142,4 @@ message_reactions = Engagement<messages[message], users[user]>;
 
 // 5. Create Read Receipts
 read_receipts = Tracking<messages[message], users[reader]>;
+

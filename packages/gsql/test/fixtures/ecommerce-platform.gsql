@@ -95,12 +95,12 @@ concept Acquisition<Actor, Item> {
 
     schema CollectionItems mixin Timestamps {
         id serial pkey;
-        collection_id integer nonull ref(Collections.id) ondelete(cascade);
+        {Collections}_id integer nonull ref(Collections.id) ondelete(cascade);
         {Item}_id integer nonull ref(Item.id) ondelete(cascade);
         quantity integer nonull default(1);
 
         check(quantity > 0);
-        index(collection_id, {Item}_id) unique;
+        index({Collections}_id, {Item}_id) unique;
     }
 }
 
@@ -131,7 +131,7 @@ concept Commerce<Buyer, Item> {
 
     schema LineItems {
         id serial pkey;
-        invoice_id integer nonull ref(Invoices.id) ondelete(cascade);
+        {Invoices}_id integer nonull ref(Invoices.id) ondelete(cascade);
         {Item}_id integer nonull ref(Item.id) ondelete(restrict);
 
         quantity integer nonull;
@@ -180,11 +180,11 @@ products = Inventory<users[vendor], categories[category]>;
 
 // 3. Shopping Carts
 // Links Users (as Customer) and Products
-carts, cart_items = Acquisition<users[customer], products[product]>;
+carts[cart], cart_items = Acquisition<users[customer], products[product]>;
 
 // 4. Orders
 // Links Users (as Customer) and Products
-orders, order_items = Commerce<users[customer], products[product]>;
+orders[order], order_items = Commerce<users[customer], products[product]>;
 
 // 5. Product Reviews (Feedback Instance 1)
 // Subject: Product, Critic: User (Customer)

@@ -52,14 +52,14 @@ concept Collaboration<Owner, Member> {
 
     schema Memberships mixin Timestamps {
         id serial pkey;
-        space_id integer nonull ref(Spaces.id) ondelete(cascade);
+        {Spaces}_id integer nonull ref(Spaces.id) ondelete(cascade);
         {Member}_id integer nonull ref(Member.id) ondelete(cascade);
 
         // Roles could be an enum, strictly keeping it varchar for flexibility here
         role varchar(20) nonull default('member');
 
-        index(space_id, {Member}_id) unique;
-        index(space_id);
+        index({Spaces}_id, {Member}_id) unique;
+        index({Spaces}_id);
     }
 }
 
@@ -77,7 +77,7 @@ concept Workflow<Context> {
 
     schema Stages mixin Timestamps {
         id serial pkey;
-        pipeline_id integer nonull ref(Pipelines.id) ondelete(cascade);
+        {Pipelines}_id integer nonull ref(Pipelines.id) ondelete(cascade);
 
         name varchar(50) nonull;
         color varchar(7);
@@ -86,8 +86,8 @@ concept Workflow<Context> {
 
         check(wip_limit is null or wip_limit > 0);
 
-        index(pipeline_id);
-        index(pipeline_id, position);
+        index({Pipelines}_id);
+        index({Pipelines}_id, position);
     }
 }
 
@@ -179,11 +179,11 @@ users = Identity;
 
 // 2. Projects & Members
 // Maps 'Spaces' -> 'projects', 'Memberships' -> 'project_members'
-projects, project_members = Collaboration<users[owner], users[member]>;
+projects[project], project_members = Collaboration<users[owner], users[member]>;
 
 // 3. Boards & Columns
 // Maps 'Pipelines' -> 'boards', 'Stages' -> 'columns'
-boards, columns = Workflow<projects[project]>;
+boards[board], columns = Workflow<projects[project]>;
 
 // 4. Tasks (Cards)
 // Maps 'Items' -> 'cards'
