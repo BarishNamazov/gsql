@@ -1,6 +1,6 @@
 {
   "name": "@barishnamazov/gsql",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Generic SQL - Parametric Polymorphism for SQL Schemas",
   "module": "src/index.ts",
   "type": "module",
