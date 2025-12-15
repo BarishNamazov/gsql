@@ -18,6 +18,7 @@ concept Announcing<Target> {
         id serial pkey;
         {Target}_id integer nonull ref(Target.id) ondelete(cascade);
         message text nonull;
+        tags jsonb;
 
         index({Target}_id);
     }
@@ -34,4 +35,4 @@ post_announcements = Announcing<posts[post]>;
 
 // Per-instantiation indexes: add indexes to specific instantiated tables
 index(post_announcements, created_at);
-index(post_announcements, message) gin;
+index(post_announcements, tags) gin;

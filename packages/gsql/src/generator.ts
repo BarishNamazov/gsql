@@ -172,6 +172,8 @@ function expandCheckExpression(expr: string, ctx: GeneratorContext): string {
 
   result = result.replace(/(\w+)::(\w+)/g, "'$2'::$1");
 
+  result = result.replace(/\bin\s+\(\(([^)]+)\)\)/g, "in ($1)");
+
   return result;
 }
 

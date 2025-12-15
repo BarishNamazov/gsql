@@ -7,14 +7,71 @@
  * - Real-world example tests
  */
 
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compile, compileToSQL, parse } from "../src/index.ts";
+import pg from "pg";
+
+const { Client } = pg;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__dirname, "fixtures");
+
+const DB_NAME = "gsql-test-db";
+
+const BASE_DB_CONFIG = process.env.DATABASE_URL
+  ? { connectionString: process.env.DATABASE_URL.replace(/\/[^/]*$/, "/postgres") }
+  : {
+      host: "localhost",
+      port: 5432,
+      user: "postgres",
+      password: "postgres",
+      database: "postgres",
+    };
+
+const DB_CONFIG = process.env.DATABASE_URL
+  ? { connectionString: process.env.DATABASE_URL }
+  : {
+      host: "localhost",
+      port: 5432,
+      user: "postgres",
+      password: "postgres",
+      database: DB_NAME,
+    };
+
+let dbClient: pg.Client | null = null;
+let dbInitialized = false;
+
+async function initializeDatabase(): Promise<boolean> {
+  if (dbInitialized) return true;
+
+  const client = new Client(BASE_DB_CONFIG);
+  try {
+    await client.connect();
+
+    const result = await client.query(
+      `SELECT 1 FROM pg_database WHERE datname = $1`,
+      [DB_NAME]
+    );
+
+    if (result.rows.length === 0) {
+      await client.query(`CREATE DATABASE "${DB_NAME}"`);
+    }
+
+    await client.end();
+    dbInitialized = true;
+    return true;
+  } catch (error) {
+    await client.end().catch(() => {});
+    return false;
+  }
+}
+
+async function isDatabaseAvailable(): Promise<boolean> {
+  return await initializeDatabase();
+}
 
 // Helper to read fixture files
 function readFixture(name: string): string {
@@ -295,7 +352,7 @@ describe("GSQL Code Generator", () => {
       }
       test = Test;
     `);
-    expect(sql).toContain("CHECK (status in (('active'::status, 'pending'::status)))");
+    expect(sql).toContain("CHECK (status in ('active'::status, 'pending'::status))");
   });
 
   test("generates complex CHECK constraint with AND/OR", () => {
@@ -535,11 +592,41 @@ describe("Real-World Examples", () => {
         const result = compile(source);
 
         if (result.sql) {
-          // Basic SQL structure validation
           expect(result.sql).toContain("-- Generated SQL");
-
-          // Should have CREATE TABLE statements
           expect(result.sql).toMatch(/CREATE TABLE \w+/);
+        }
+      });
+
+      test("compiled SQL executes without errors in PostgreSQL", async () => {
+        const dbAvailable = await isDatabaseAvailable();
+        if (!dbAvailable) {
+          console.warn(
+            `Skipping PostgreSQL test: database not available at ${DB_CONFIG.host || "DATABASE_URL"}`
+          );
+          return;
+        }
+
+        const source = readFixture(`${fixtureName}.gsql`);
+        const result = compile(source);
+
+        expect(result.success).toBe(true);
+        expect(result.sql).toBeDefined();
+
+        if (result.sql) {
+          const client = new Client(DB_CONFIG);
+          try {
+            await client.connect();
+
+            const schemaName = `test_${fixtureName.replace(/-/g, "_")}_${Date.now()}`;
+            await client.query(`CREATE SCHEMA ${schemaName}`);
+            await client.query(`SET search_path TO ${schemaName}`);
+
+            await client.query(result.sql);
+
+            await client.query(`DROP SCHEMA ${schemaName} CASCADE`);
+          } finally {
+            await client.end();
+          }
         }
       });
     });
@@ -555,28 +642,23 @@ describe("Exam System (Original Test)", () => {
 
     const sql = result.sql ?? "";
 
-    // Check for key components from the expected output
     expect(sql).toContain("CREATE EXTENSION IF NOT EXISTS");
     expect(sql).toContain("CREATE OR REPLACE FUNCTION set_updated_at()");
 
-    // Check for all enum types
     expect(sql).toContain("CREATE TYPE user_role AS ENUM");
     expect(sql).toContain("CREATE TYPE assessment_status AS ENUM");
     expect(sql).toContain("CREATE TYPE question_type AS ENUM");
     expect(sql).toContain("CREATE TYPE submission_status AS ENUM");
 
-    // Check for key tables
     expect(sql).toContain("CREATE TABLE users");
     expect(sql).toContain("CREATE TABLE exams");
     expect(sql).toContain("CREATE TABLE questions");
     expect(sql).toContain("CREATE TABLE exam_submissions");
     expect(sql).toContain("CREATE TABLE sessions");
 
-    // Check for foreign keys
     expect(sql).toContain("REFERENCES users(id)");
     expect(sql).toContain("REFERENCES exams(id)");
 
-    // Check for triggers
     expect(sql).toContain("CREATE TRIGGER set_updated_at_users");
     expect(sql).toContain("CREATE TRIGGER set_updated_at_exams");
   });
@@ -591,9 +673,8 @@ describe("Per-Instantiation Indexing", () => {
 
     const sql = result.sql ?? "";
 
-    // Check for per-instance indexes
     expect(sql).toContain("idx_post_announcements_created_at");
-    expect(sql).toContain("idx_post_announcements_message");
+    expect(sql).toContain("idx_post_announcements_tags");
     expect(sql).toContain("USING gin");
   });
 
@@ -603,7 +684,6 @@ describe("Per-Instantiation Indexing", () => {
 
     const sql = result.sql ?? "";
 
-    // The table should be created before the per-instance index
     const tablePos = sql.indexOf("CREATE TABLE post_announcements");
     const indexPos = sql.indexOf("idx_post_announcements_created_at");
 

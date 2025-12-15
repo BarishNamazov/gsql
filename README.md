@@ -258,9 +258,29 @@ npm run build:playground
 
 ### Testing
 
+The test suite includes integration tests that execute compiled SQL against a real PostgreSQL database. To run the full test suite, you need to have PostgreSQL running locally.
+
+**PostgreSQL Setup:**
+
+The tests expect PostgreSQL to be available with these default settings:
+- Host: `localhost`
+- Port: `5432`
+- User: `postgres`
+- Password: `postgres`
+
+You can override these using the `DATABASE_URL` environment variable:
+
+```bash
+DATABASE_URL=postgresql://user:password@host:port/database npm test
+```
+
+**Running Tests:**
+
 ```bash
 npm test
 ```
+
+The tests will automatically create a test database (`gsql-test-db`) if it doesn't exist. Tests that require the database will be skipped if PostgreSQL is not available.
 
 ### Playground Development
 
