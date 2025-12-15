@@ -205,6 +205,137 @@ describe("GSQL Code Generator", () => {
     expect(sql).toContain("'user'");
   });
 
+  test("generates enum column with default value", () => {
+    const sql = compileToSQL(`
+      enum user_role {
+        admin;
+        user;
+      }
+      schema Users {
+        id serial pkey;
+        role user_role nonull default(user);
+      }
+      users = Users;
+    `);
+    expect(sql).toContain("role USER_ROLE NOT NULL DEFAULT 'user'::user_role");
+  });
+
+  test("generates enum column with qualified default value", () => {
+    const sql = compileToSQL(`
+      enum status {
+        active;
+        inactive;
+      }
+      schema Items {
+        id serial pkey;
+        status status default(status::active);
+      }
+      items = Items;
+    `);
+    expect(sql).toContain("status STATUS DEFAULT 'active'::status");
+  });
+
+  test("generates enum in concept with default value", () => {
+    const sql = compileToSQL(`
+      concept Statusing {
+        enum item_status {
+          draft;
+          published;
+        }
+        schema Items {
+          id serial pkey;
+          status item_status nonull default(draft);
+        }
+      }
+      items = Statusing;
+    `);
+    expect(sql).toContain("CREATE TYPE item_status AS ENUM");
+    expect(sql).toContain("status ITEM_STATUS NOT NULL DEFAULT 'draft'::item_status");
+  });
+
+  test("generates CHECK constraint with comparison operators", () => {
+    const sql = compileToSQL(`
+      schema Test {
+        id serial pkey;
+        points integer;
+        check(points is null or points >= 0);
+      }
+      test = Test;
+    `);
+    expect(sql).toContain("CHECK (points is null or points >= 0)");
+  });
+
+  test("generates CHECK constraint with enum references", () => {
+    const sql = compileToSQL(`
+      enum status {
+        active;
+        inactive;
+      }
+      schema Test {
+        id serial pkey;
+        status status;
+        check(status = status::active);
+      }
+      test = Test;
+    `);
+    expect(sql).toContain("CHECK (status = 'active'::status)");
+  });
+
+  test("generates CHECK constraint with enum IN clause", () => {
+    const sql = compileToSQL(`
+      enum status {
+        active;
+        pending;
+        inactive;
+      }
+      schema Test {
+        id serial pkey;
+        status status;
+        check(status in (status::active, status::pending));
+      }
+      test = Test;
+    `);
+    expect(sql).toContain("CHECK (status in (('active'::status, 'pending'::status)))");
+  });
+
+  test("generates complex CHECK constraint with AND/OR", () => {
+    const sql = compileToSQL(`
+      schema Test {
+        id serial pkey;
+        min_value integer;
+        max_value integer;
+        check((min_value is null and max_value is null) or (min_value < max_value));
+      }
+      test = Test;
+    `);
+    expect(sql).toContain(
+      "CHECK (((min_value is null and max_value is null)) or ((min_value < max_value)))"
+    );
+  });
+
+  test("generates CHECK constraint with nested conditions", () => {
+    const sql = compileToSQL(`
+      enum reg_type {
+        free;
+        password;
+      }
+      schema Registration {
+        id serial pkey;
+        type reg_type;
+        password text;
+        check(
+          (type = reg_type::password and password is not null)
+          or
+          (type = reg_type::free and password is null)
+        );
+      }
+      registration = Registration;
+    `);
+    expect(sql).toContain(
+      "CHECK (((type = 'password'::reg_type and password is not null)) or ((type = 'free'::reg_type and password is null)))"
+    );
+  });
+
   test("generates table with primary key", () => {
     const sql = compileToSQL(`
       schema Users {

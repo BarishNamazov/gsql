@@ -185,6 +185,9 @@ function generateEnumSql(enumDecl: EnumDecl, ctx: GeneratorContext): void {
   if (ctx.generatedEnums.has(name)) return;
   ctx.generatedEnums.add(name);
 
+  // Add to enums map so it can be referenced for default value formatting
+  ctx.enums.set(name, enumDecl);
+
   const values = enumDecl.values.map((v) => `'${v}'`).join(", ");
   ctx.enumSql.push(`DO $$ BEGIN
     CREATE TYPE ${name} AS ENUM (${values});
@@ -211,9 +214,33 @@ function generateColumnSql(col: ColumnDef, ctx: GeneratorContext): string {
       case "Unique":
         parts.push("UNIQUE");
         break;
-      case "Default":
-        parts.push(`DEFAULT ${constraint.value ?? "NULL"}`);
+      case "Default": {
+        let defaultValue = constraint.value ?? "NULL";
+
+        // Check if this is an enum type and the default needs formatting
+        const enumTypeName = col.dataType.toLowerCase();
+        if (ctx.enums.has(enumTypeName)) {
+          // This is an enum column
+          // Check if the default value is already in the format 'value'::type or type::value
+          if (
+            !defaultValue.includes("::") &&
+            !defaultValue.includes("'") &&
+            defaultValue !== "NULL"
+          ) {
+            // It's a plain enum value identifier, format it as 'value'::type
+            defaultValue = `'${defaultValue}'::${enumTypeName}`;
+          } else if (defaultValue.includes("::") && !defaultValue.includes("'")) {
+            // It's in the format type::value, convert to 'value'::type
+            const match = defaultValue.match(/^(\w+)::(\w+)$/);
+            if (match?.[1] && match[2]) {
+              defaultValue = `'${match[2]}'::${match[1]}`;
+            }
+          }
+        }
+
+        parts.push(`DEFAULT ${defaultValue}`);
         break;
+      }
       case "Reference": {
         let tableName = constraint.table ?? "";
         if (ctx.tableToSchema.has(tableName)) {

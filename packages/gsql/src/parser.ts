@@ -1028,23 +1028,104 @@ class CstToAstVisitor {
   }
 
   private reconstructCheckExpression(node: CstNode): string {
-    const parts: string[] = [];
+    // Collect all tokens/nodes with their positions
+    const tokens: {
+      image: string;
+      startOffset: number;
+      isParenExpr: boolean;
+    }[] = [];
 
     for (const key of Object.keys(node.children)) {
       const children = node.children[key];
       if (!children) continue;
 
       for (const child of children) {
-        if ("image" in child) {
-          parts.push(child.image);
+        if ("image" in child && "startOffset" in child) {
+          // It's a token
+          const startOffset = typeof child.startOffset === "number" ? child.startOffset : 0;
+          tokens.push({
+            image: child.image,
+            startOffset,
+            isParenExpr: false,
+          });
         } else if ("children" in child && key === "checkExpression") {
+          // It's a nested checkExpression (inside parentheses)
           const inner = this.reconstructCheckExpression(child);
-          if (inner) parts.push(`(${inner})`);
+          if (inner) {
+            // Get the position from the first token in the child
+            let minOffset = Infinity;
+            for (const childKey of Object.keys(child.children)) {
+              const childChildren = child.children[childKey];
+              if (childChildren) {
+                for (const c of childChildren) {
+                  if ("startOffset" in c && typeof c.startOffset === "number") {
+                    minOffset = Math.min(minOffset, c.startOffset);
+                  }
+                }
+              }
+            }
+            tokens.push({
+              image: `(${inner})`,
+              startOffset: minOffset === Infinity ? 0 : minOffset,
+              isParenExpr: true,
+            });
+          }
         }
       }
     }
 
-    return parts.join(" ");
+    // Sort tokens by their position in the source
+    tokens.sort((a, b) => a.startOffset - b.startOffset);
+
+    // Join tokens intelligently - add spaces only where needed
+    let result = "";
+    for (let i = 0; i < tokens.length; i++) {
+      const current = tokens[i];
+      const prev = i > 0 ? tokens[i - 1] : null;
+
+      if (!current) continue;
+      const currentImage = current.image;
+
+      // Tokens that should not have a space before them
+      const noSpaceBefore = [")", ",", ".", "::", ">", "<"];
+      // Tokens that should not have a space after them
+      const noSpaceAfter = ["(", ".", "::"];
+
+      // Add space if needed
+      if (prev && !current.isParenExpr) {
+        const prevImage = prev.image;
+        const prevLastChar = prevImage[prevImage.length - 1] ?? "";
+
+        // Special case: if prev is > or < and current is =, don't add space (for >=, <=)
+        const isCompoundOperator = (prevImage === ">" || prevImage === "<") && currentImage === "=";
+        // Add space before comparison operators (unless making a compound one)
+        const isOperatorStart =
+          (currentImage === ">" || currentImage === "<") &&
+          !noSpaceAfter.includes(prevImage) &&
+          prevLastChar !== "(";
+
+        const needsSpace =
+          (!noSpaceBefore.includes(currentImage) &&
+            !noSpaceAfter.includes(prevImage) &&
+            prevLastChar !== "(" &&
+            !isCompoundOperator) ||
+          isOperatorStart;
+
+        if (needsSpace) {
+          result += " ";
+        }
+      } else if (prev && current.isParenExpr) {
+        // For parenthesized expressions, add space unless previous ends with (
+        const prevImage = prev.image;
+        const prevLastChar = prevImage[prevImage.length - 1] ?? "";
+        if (prevLastChar !== "(") {
+          result += " ";
+        }
+      }
+      result += currentImage;
+    }
+
+    return result;
   }
 
   private visitIndexDef(node: CstNode): IndexDef {
