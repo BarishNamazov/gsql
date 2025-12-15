@@ -1,4 +1,11 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/gsql" }, { "path": "./packages/playground" }]
+  "references": [
+    {
+      "path": "./packages/gsql"
+    },
+    {
+      "path": "./packages/playground"
+    }
+  ]
 }

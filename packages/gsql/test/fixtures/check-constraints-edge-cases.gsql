@@ -1,0 +1,93 @@
+// GSQL Test Fixture: Check Constraint Edge Cases
+// Tests various check constraint scenarios
+
+// Test 1: Simple comparison checks
+schema Products {
+    id serial pkey;
+    name text nonull;
+    price decimal nonull;
+    stock integer nonull;
+    discount_percent integer;
+
+    check(price > 0);
+    check(stock >= 0);
+    check(discount_percent is null or (discount_percent >= 0 and discount_percent <= 100));
+}
+
+// Test 2: Complex nested conditions
+schema Subscriptions {
+    id serial pkey;
+    plan_name text nonull;
+    monthly_price decimal;
+    annual_price decimal;
+    trial_days integer;
+
+    check(
+        (monthly_price is not null and monthly_price > 0)
+        or
+        (annual_price is not null and annual_price > 0)
+    );
+    check(trial_days is null or trial_days >= 0);
+}
+
+// Test 3: Multiple conditions with IN clause
+schema Users {
+    id serial pkey;
+    username text nonull;
+    age integer;
+    role text nonull;
+
+    check(age is null or age >= 13);
+    check(role in ('admin', 'moderator', 'user', 'guest'));
+}
+
+// Test 4: Date/time comparisons
+schema Events {
+    id serial pkey;
+    name text nonull;
+    starts_at timestamptz nonull;
+    ends_at timestamptz;
+    registration_opens_at timestamptz;
+    registration_closes_at timestamptz;
+
+    check(ends_at is null or ends_at > starts_at);
+    check(registration_opens_at is null or registration_opens_at < starts_at);
+    check(
+        registration_closes_at is null
+        or
+        (registration_opens_at is not null and registration_closes_at > registration_opens_at)
+    );
+}
+
+// Test 5: String constraints
+schema Profiles {
+    id serial pkey;
+    username text nonull;
+    email text nonull;
+    bio text;
+    website text;
+
+    check(char_length(username) >= 3);
+    check(char_length(username) <= 30);
+    check(email like '%@%');
+    check(bio is null or char_length(bio) <= 500);
+}
+
+// Test 6: Range checks with bounds
+schema Measurements {
+    id serial pkey;
+    width decimal nonull;
+    height decimal nonull;
+    depth decimal;
+
+    check(width > 0 and height > 0);
+    check(depth is null or depth > 0);
+    check(width <= 1000 and height <= 1000);
+}
+
+products = Products;
+subscriptions = Subscriptions;
+users = Users;
+events = Events;
+profiles = Profiles;
+measurements = Measurements;

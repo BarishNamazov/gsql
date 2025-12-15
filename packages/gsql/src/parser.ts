@@ -1049,7 +1049,9 @@ class CstToAstVisitor {
             isParenExpr: false,
           });
         } else if ("children" in child && key === "checkExpression") {
-          // It's a nested checkExpression (inside parentheses)
+          // It's a nested checkExpression - recursively reconstruct it
+          // Note: The LParen and RParen tokens from the grammar rule are collected
+          // separately as tokens in the parent, so we don't wrap the result here
           const inner = this.reconstructCheckExpression(child);
           if (inner) {
             // Get the position from the first token in the child
@@ -1065,9 +1067,9 @@ class CstToAstVisitor {
               }
             }
             tokens.push({
-              image: `(${inner})`,
+              image: inner,
               startOffset: minOffset === Infinity ? 0 : minOffset,
-              isParenExpr: true,
+              isParenExpr: false,
             });
           }
         }

@@ -180,7 +180,7 @@ function main(): void {
   if (!result.success) {
     for (const error of result.errors) {
       console.error(
-        formatError(error.message, error.location?.start.line, error.location?.start.column)
+        formatError(error.message, error.location?.start.line, error.location?.start.column),
       );
     }
     process.exit(1);

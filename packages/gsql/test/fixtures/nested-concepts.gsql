@@ -1,0 +1,110 @@
+// GSQL Test Fixture: Nested Concepts and Complex Template Substitution
+// Tests concepts that instantiate other concepts and complex template variable usage
+
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+}
+
+// Base concept for adding comments to any entity
+concept Commenting<Target> {
+    schema Comments mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        author_id integer nonull;
+        content text nonull;
+
+        index({Target}_id);
+        index(author_id);
+    }
+}
+
+// Concept for entities that can have reactions
+concept Reacting<Target> {
+    schema Reactions mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        user_id integer nonull;
+        reaction_type text nonull;
+
+        index({Target}_id, user_id) unique;
+        check(reaction_type in ('like', 'love', 'haha', 'wow', 'sad', 'angry'));
+    }
+}
+
+// Concept with multiple schemas that reference each other
+concept Tagging<Target> {
+    schema Tags {
+        id serial pkey;
+        name text nonull unique;
+        slug text nonull unique;
+    }
+
+    schema Taggings mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Tags}_id integer nonull ref(Tags.id) ondelete(cascade);
+
+        index({Target}_id);
+        index({Tags}_id);
+        index({Target}_id, {Tags}_id) unique;
+    }
+}
+
+// Base entities
+schema Users mixin Timestamps {
+    id serial pkey;
+    username text nonull unique;
+    email text nonull unique;
+}
+
+schema Posts mixin Timestamps {
+    id serial pkey;
+    author_id integer nonull ref(Users.id) ondelete(cascade);
+    title text nonull;
+    content text nonull;
+    published boolean nonull default(false);
+
+    index(author_id);
+}
+
+schema Photos mixin Timestamps {
+    id serial pkey;
+    uploader_id integer nonull ref(Users.id) ondelete(cascade);
+    url text nonull;
+    caption text;
+
+    index(uploader_id);
+}
+
+// Instantiate base entities
+users = Users;
+posts = Posts;
+photos = Photos;
+
+// Add commenting to posts
+post_comments = Commenting<posts[post]>;
+
+// Add reactions to posts
+post_reactions = Reacting<posts[post]>;
+
+// Add comments to photos
+photo_comments = Commenting<photos[photo]>;
+
+// Add reactions to photos
+photo_reactions = Reacting<photos[photo]>;
+
+// Add tagging to posts (multiple schemas from one concept)
+post_tags[post_tag], post_taggings = Tagging<posts[post]>;
+
+// Add tagging to photos
+photo_tags[photo_tag], photo_taggings = Tagging<photos[photo]>;
+
+// Note: In a real system, we might want comments on comments too!
+// This would create comment_comments = Commenting<post_comments[post_comment]>;
+// but we'll keep this fixture focused on the main patterns
+
+// Add some per-instance indexes
+index(post_comments, created_at);
+index(photo_comments, created_at);
+index(post_reactions, created_at);

@@ -33,7 +33,7 @@ const sourceEditor = new EditorView({
             return true;
           },
         },
-      ])
+      ]),
     ),
     EditorView.updateListener.of((update: ViewUpdate) => {
       if (update.docChanged && !isLoadingExample) {

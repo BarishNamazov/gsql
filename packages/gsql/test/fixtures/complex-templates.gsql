@@ -1,0 +1,103 @@
+// GSQL Test Fixture: Complex Template Substitution
+// Tests various template variable scenarios and edge cases
+
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+}
+
+// Concept with multiple type parameters
+concept Linking<Source, Target> {
+    schema Links mixin Timestamps {
+        id serial pkey;
+        {Source}_id integer nonull ref(Source.id) ondelete(cascade);
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        link_type text;
+        metadata jsonb;
+
+        index({Source}_id);
+        index({Target}_id);
+        index({Source}_id, {Target}_id) unique;
+    }
+}
+
+// Concept with self-references in checks
+concept Voting<Target, Voter> {
+    schema Votes mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Voter}_id integer nonull ref(Voter.id) ondelete(cascade);
+        vote_value integer nonull;
+
+        index({Target}_id);
+        index({Voter}_id);
+        index({Target}_id, {Voter}_id) unique;
+        check(vote_value in (-1, 0, 1));
+    }
+}
+
+// Concept with aliased schema references
+concept Following<Follower, Followee> {
+    schema Follows mixin Timestamps {
+        id serial pkey;
+        {Follower}_id integer nonull ref(Follower.id) ondelete(cascade);
+        {Followee}_id integer nonull ref(Followee.id) ondelete(cascade);
+        
+        index({Follower}_id);
+        index({Followee}_id);
+        index({Follower}_id, {Followee}_id) unique;
+    }
+}
+
+// Base schemas
+schema Users mixin Timestamps {
+    id serial pkey;
+    username text nonull unique;
+}
+
+schema Posts mixin Timestamps {
+    id serial pkey;
+    author_id integer nonull ref(Users.id);
+    title text nonull;
+}
+
+schema Comments mixin Timestamps {
+    id serial pkey;
+    post_id integer nonull ref(Posts.id);
+    author_id integer nonull ref(Users.id);
+    content text nonull;
+}
+
+schema Articles mixin Timestamps {
+    id serial pkey;
+    title text nonull;
+}
+
+// Instantiate
+users = Users;
+posts = Posts;
+comments = Comments;
+articles = Articles;
+
+// Test 1: Link posts to articles (two different types)
+post_article_links = Linking<posts[post], articles[article]>;
+
+// Test 2: Link articles to posts (reverse direction)
+article_post_links = Linking<articles[article], posts[post]>;
+
+// Test 3: Users voting on posts
+post_votes = Voting<posts[post], users[voter]>;
+
+// Test 4: Users voting on comments
+comment_votes = Voting<comments[comment], users[voter]>;
+
+// Test 5: Users following users (both parameters use the same type)
+user_follows = Following<users[follower], users[followee]>;
+
+// Test 6: Users linking to articles (demonstrating asymmetry)
+user_article_links = Linking<users[user], articles[article]>;
+
+// Per-instance indexes
+index(post_article_links, created_at);
+index(post_votes, created_at);
+index(user_follows, created_at);

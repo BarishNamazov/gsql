@@ -190,7 +190,7 @@ const gsqlLanguage = StreamLanguage.define<GSQLState>({
 
     if (
       ["LBrace", "RBrace", "LParen", "RParen", "LBracket", "RBracket", "LAngle", "RAngle"].includes(
-        tokenType
+        tokenType,
       )
     ) {
       return "bracket";

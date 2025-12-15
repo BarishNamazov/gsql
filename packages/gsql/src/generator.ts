@@ -47,6 +47,57 @@ function toSnakeCase(str: string): string {
     .toLowerCase();
 }
 
+/**
+ * Format a value with type casting for PostgreSQL.
+ * Converts type::value to 'value'::type format.
+ *
+ * Examples:
+ * - "status::active" -> "'active'::status"
+ * - "'active'::status" -> "'active'::status" (already formatted)
+ * - "42" -> "42" (no cast)
+ */
+function formatTypeCast(value: string): string {
+  // If no type cast operator, return as-is
+  if (!value.includes("::")) {
+    return value;
+  }
+
+  // Convert type::value to 'value'::type for any parts that need it
+  // This regex looks for word::word pattern and converts it
+  // Already formatted 'value'::type patterns are left unchanged
+  return value.replace(/(\w+)::(\w+)/g, "'$2'::$1");
+}
+
+/**
+ * Format an enum default value for PostgreSQL.
+ * Ensures the value is properly quoted and cast to the enum type.
+ *
+ * Examples:
+ * - "active" with type "status" -> "'active'::status"
+ * - "status::active" with type "status" -> "'active'::status"
+ * - "'active'::status" with type "status" -> "'active'::status" (already formatted)
+ * - "NULL" -> "NULL" (special value)
+ */
+function formatEnumDefault(value: string, enumType: string): string {
+  if (value === "NULL") {
+    return value;
+  }
+
+  // Check if already in PostgreSQL cast format: 'value'::type
+  const alreadyFormatted = /^'[^']*'::\w+$/.test(value);
+  if (alreadyFormatted) {
+    return value;
+  }
+
+  // If has type cast (type::value), convert it
+  if (value.includes("::")) {
+    return formatTypeCast(value);
+  }
+
+  // Plain identifier, wrap in quotes and add type cast
+  return `'${value}'::${enumType}`;
+}
+
 // ============================================================================
 // Generator Context
 // ============================================================================
@@ -164,15 +215,15 @@ function escapeRegExp(str: string): string {
 function expandCheckExpression(expr: string, ctx: GeneratorContext): string {
   let result = expr;
 
+  // Expand template variables
   for (const [param, value] of ctx.templateSubs) {
     const escapedParam = escapeRegExp(param);
     const pattern = new RegExp(`\\{${escapedParam}\\}`, "g");
     result = result.replace(pattern, value);
   }
 
-  result = result.replace(/(\w+)::(\w+)/g, "'$2'::$1");
-
-  result = result.replace(/\bin\s+\(\(([^)]+)\)\)/g, "in ($1)");
+  // Format type casts (type::value -> 'value'::type)
+  result = formatTypeCast(result);
 
   return result;
 }
@@ -219,25 +270,9 @@ function generateColumnSql(col: ColumnDef, ctx: GeneratorContext): string {
       case "Default": {
         let defaultValue = constraint.value ?? "NULL";
 
-        // Check if this is an enum type and the default needs formatting
         const enumTypeName = col.dataType.toLowerCase();
         if (ctx.enums.has(enumTypeName)) {
-          // This is an enum column
-          // Check if the default value is already in the format 'value'::type or type::value
-          if (
-            !defaultValue.includes("::") &&
-            !defaultValue.includes("'") &&
-            defaultValue !== "NULL"
-          ) {
-            // It's a plain enum value identifier, format it as 'value'::type
-            defaultValue = `'${defaultValue}'::${enumTypeName}`;
-          } else if (defaultValue.includes("::") && !defaultValue.includes("'")) {
-            // It's in the format type::value, convert to 'value'::type
-            const match = defaultValue.match(/^(\w+)::(\w+)$/);
-            if (match?.[1] && match[2]) {
-              defaultValue = `'${match[2]}'::${match[1]}`;
-            }
-          }
+          defaultValue = formatEnumDefault(defaultValue, enumTypeName);
         }
 
         parts.push(`DEFAULT ${defaultValue}`);
@@ -263,9 +298,14 @@ function generateColumnSql(col: ColumnDef, ctx: GeneratorContext): string {
   return [...parts, ...postConstraints].join(" ");
 }
 
+/**
+ * Generate CREATE INDEX SQL statement.
+ * Used for both schema-level indexes and per-instance indexes.
+ */
 function generateIndexSql(tableName: string, index: IndexDef, ctx: GeneratorContext): string {
-  const columns = index.columns.map((c) => expandTemplate(c, ctx)).join(", ");
-  const columnNames = index.columns.map((c) => expandTemplate(c, ctx)).join("_");
+  const expandedColumns = index.columns.map((c) => expandTemplate(c, ctx));
+  const columns = expandedColumns.join(", ");
+  const columnNames = expandedColumns.join("_");
   const indexName = `idx_${tableName}_${columnNames}`;
   const unique = index.unique === true ? "UNIQUE " : "";
   const using = index.using ? `USING ${index.using} ` : "";
@@ -281,7 +321,7 @@ function generateCheckSql(_tableName: string, check: CheckDef, ctx: GeneratorCon
 function generateTriggerSql(
   tableName: string,
   trigger: TriggerDef,
-  _ctx: GeneratorContext
+  _ctx: GeneratorContext,
 ): string {
   const timing = trigger.timing.toUpperCase();
   const event = trigger.event.toUpperCase();
@@ -322,7 +362,7 @@ function resolveMixins(schema: SchemaDecl, ctx: GeneratorContext): SchemaBodyIte
 function resolveSchema(
   schema: SchemaDecl,
   tableName: string,
-  ctx: GeneratorContext
+  ctx: GeneratorContext,
 ): ResolvedSchema {
   const allItems = resolveMixins(schema, ctx);
 
@@ -473,14 +513,14 @@ function processInstantiation(decl: Instantiation, ctx: GeneratorContext): void 
 }
 
 function processPerInstanceIndex(decl: PerInstanceIndex, ctx: GeneratorContext): void {
-  const columns = decl.columns.join(", ");
-  const indexName = `idx_${decl.tableName}_${decl.columns.join("_")}`;
-  const unique = decl.unique === true ? "UNIQUE " : "";
-  const using = decl.using ? `USING ${decl.using} ` : "";
+  const indexDef: IndexDef = {
+    type: "IndexDef",
+    columns: decl.columns,
+    unique: decl.unique,
+    using: decl.using,
+  };
 
-  ctx.perInstanceIndexSql.push(
-    `CREATE ${unique}INDEX ${indexName} ON ${decl.tableName} ${using}(${columns});`
-  );
+  ctx.perInstanceIndexSql.push(generateIndexSql(decl.tableName, indexDef, ctx));
 }
 
 // ============================================================================

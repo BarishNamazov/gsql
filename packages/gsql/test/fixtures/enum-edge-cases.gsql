@@ -1,0 +1,78 @@
+// GSQL Test Fixture: Enum Edge Cases
+// Tests various enum scenarios including defaults, checks, and type casting
+
+enum status {
+    draft;
+    published;
+    archived;
+}
+
+enum priority {
+    low;
+    medium;
+    high;
+    critical;
+}
+
+enum visibility {
+    public;
+    private;
+    unlisted;
+}
+
+// Test 1: Enum with simple default (identifier)
+schema Articles {
+    id serial pkey;
+    title text nonull;
+    status status nonull default(draft);
+}
+
+// Test 2: Enum with type::value format default
+schema Posts {
+    id serial pkey;
+    title text nonull;
+    status status nonull default(status::published);
+}
+
+// Test 3: Enum with NULL default
+schema Pages {
+    id serial pkey;
+    title text nonull;
+    visibility visibility default(NULL);
+}
+
+// Test 4: Multiple enums in same schema
+schema Tasks {
+    id serial pkey;
+    name text nonull;
+    status status nonull default(draft);
+    priority priority nonull default(medium);
+}
+
+// Test 5: Enum in check constraint with OR
+schema Documents {
+    id serial pkey;
+    title text nonull;
+    status status nonull;
+    check(status = status::published or status = status::archived);
+}
+
+// Test 6: Complex check with multiple enum values
+schema Settings {
+    id serial pkey;
+    name text nonull;
+    visibility visibility nonull default(private);
+    priority priority nonull default(low);
+    check(
+        (visibility = visibility::public and priority in (priority::high, priority::critical))
+        or
+        (visibility = visibility::private)
+    );
+}
+
+articles = Articles;
+posts = Posts;
+pages = Pages;
+tasks = Tasks;
+documents = Documents;
+settings = Settings;

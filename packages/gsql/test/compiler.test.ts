@@ -7,7 +7,7 @@
  * - Real-world example tests
  */
 
-import { describe, test, expect, beforeAll, afterAll } from "vitest";
+import { describe, test, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,8 +21,8 @@ const FIXTURES_DIR = join(__dirname, "fixtures");
 
 const DB_NAME = "gsql-test-db";
 
-const BASE_DB_CONFIG = process.env.DATABASE_URL
-  ? { connectionString: process.env.DATABASE_URL.replace(/\/[^/]*$/, "/postgres") }
+const BASE_DB_CONFIG = process.env["DATABASE_URL"]
+  ? { connectionString: process.env["DATABASE_URL"].replace(/\/[^/]*$/, "/postgres") }
   : {
       host: "localhost",
       port: 5432,
@@ -31,8 +31,8 @@ const BASE_DB_CONFIG = process.env.DATABASE_URL
       database: "postgres",
     };
 
-const DB_CONFIG = process.env.DATABASE_URL
-  ? { connectionString: process.env.DATABASE_URL }
+const DB_CONFIG = process.env["DATABASE_URL"]
+  ? { connectionString: process.env["DATABASE_URL"] }
   : {
       host: "localhost",
       port: 5432,
@@ -41,7 +41,6 @@ const DB_CONFIG = process.env.DATABASE_URL
       database: DB_NAME,
     };
 
-let dbClient: pg.Client | null = null;
 let dbInitialized = false;
 
 async function initializeDatabase(): Promise<boolean> {
@@ -51,10 +50,7 @@ async function initializeDatabase(): Promise<boolean> {
   try {
     await client.connect();
 
-    const result = await client.query(
-      `SELECT 1 FROM pg_database WHERE datname = $1`,
-      [DB_NAME]
-    );
+    const result = await client.query(`SELECT 1 FROM pg_database WHERE datname = $1`, [DB_NAME]);
 
     if (result.rows.length === 0) {
       await client.query(`CREATE DATABASE "${DB_NAME}"`);
@@ -63,8 +59,10 @@ async function initializeDatabase(): Promise<boolean> {
     await client.end();
     dbInitialized = true;
     return true;
-  } catch (error) {
-    await client.end().catch(() => {});
+  } catch {
+    await client.end().catch(() => {
+      // Ignore errors during cleanup
+    });
     return false;
   }
 }
@@ -366,7 +364,7 @@ describe("GSQL Code Generator", () => {
       test = Test;
     `);
     expect(sql).toContain(
-      "CHECK (((min_value is null and max_value is null)) or ((min_value < max_value)))"
+      "CHECK ((min_value is null and max_value is null) or (min_value < max_value))",
     );
   });
 
@@ -389,7 +387,7 @@ describe("GSQL Code Generator", () => {
       registration = Registration;
     `);
     expect(sql).toContain(
-      "CHECK (((type = 'password'::reg_type and password is not null)) or ((type = 'free'::reg_type and password is null)))"
+      "CHECK ((type = 'password'::reg_type and password is not null) or (type = 'free'::reg_type and password is null))",
     );
   });
 
@@ -601,7 +599,7 @@ describe("Real-World Examples", () => {
         const dbAvailable = await isDatabaseAvailable();
         if (!dbAvailable) {
           console.warn(
-            `Skipping PostgreSQL test: database not available at ${DB_CONFIG.host || "DATABASE_URL"}`
+            `Skipping PostgreSQL test: database not available at ${DB_CONFIG.host ?? "DATABASE_URL"}`,
           );
           return;
         }

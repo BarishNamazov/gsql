@@ -28,9 +28,13 @@ function formatName(filename) {
 
 const examples = [];
 
-const files = readdirSync(fixturesDir)
-  .filter((f) => f.endsWith(".gsql"))
-  .sort();
+const files = [
+  "blog-platform.gsql",
+  "chat-application.gsql",
+  "ecommerce-platform.gsql",
+  "exam-system.gsql",
+  "task-management.gsql",
+];
 
 for (const file of files) {
   const filepath = join(fixturesDir, file);
