@@ -1,6 +1,6 @@
 {
   "name": "@barishnamazov/gsql",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Generic SQL - Parametric Polymorphism for SQL Schemas",
   "module": "src/index.ts",
   "type": "module",
@@ -17,7 +17,8 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier --write --check \"src/**/*.ts\" \"test/**/*.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postversion": "git push && git push --tags"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
