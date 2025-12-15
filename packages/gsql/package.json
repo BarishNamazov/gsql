@@ -41,7 +41,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/BarishNamazov/gsql-dev",
+    "url": "git+https://github.com/BarishNamazov/gsql.git",
     "directory": "packages/gsql"
   },
   "files": [
