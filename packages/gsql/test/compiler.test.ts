@@ -565,6 +565,162 @@ describe("GSQL Code Generator", () => {
   });
 });
 
+describe("Partial Index with WHERE clause", () => {
+  test("parses schema index with where clause", () => {
+    const result = parse(`
+      schema Questions {
+        id serial pkey;
+        assessment_id integer nonull;
+        position integer nonull;
+        deleted_at timestamptz;
+
+        index(assessment_id, position) unique where (deleted_at is null);
+      }
+    `);
+    expect(result.errors).toHaveLength(0);
+    expect(result.ast).not.toBeNull();
+
+    const schema = result.ast?.declarations[0];
+    expect(schema?.type).toBe("SchemaDecl");
+
+    if (schema?.type === "SchemaDecl") {
+      const indexes = schema.members.filter((m) => m.type === "IndexDef");
+      expect(indexes).toHaveLength(1);
+
+      const idx = indexes[0];
+      if (idx?.type === "IndexDef") {
+        expect(idx.columns).toEqual(["assessment_id", "position"]);
+        expect(idx.unique).toBe(true);
+        expect(idx.where).toBe("deleted_at is null");
+      }
+    }
+  });
+
+  test("generates index with WHERE clause", () => {
+    const sql = compileToSQL(`
+      schema Questions {
+        id serial pkey;
+        assessment_id integer nonull;
+        position integer nonull;
+        deleted_at timestamptz;
+
+        index(assessment_id, position) unique where (deleted_at is null);
+      }
+      questions = Questions;
+    `);
+
+    expect(sql).toContain("CREATE UNIQUE INDEX idx_questions_assessment_id_position");
+    expect(sql).toContain("ON questions");
+    expect(sql).toContain("WHERE (deleted_at is null)");
+  });
+
+  test("generates index with WHERE clause in concept", () => {
+    const sql = compileToSQL(`
+      concept Assessing<Author> {
+        schema Questions {
+          id serial pkey;
+          {Author}_id integer nonull;
+          position integer nonull;
+          deleted_at timestamptz;
+
+          index({Author}_id, position) unique where (deleted_at is null);
+        }
+      }
+      schema Users {
+        id serial pkey;
+      }
+      users = Users;
+      questions = Assessing<users>;
+    `);
+
+    expect(sql).toContain("CREATE UNIQUE INDEX idx_questions_author_id_position");
+    expect(sql).toContain("WHERE (deleted_at is null)");
+  });
+
+  test("generates per-instance index with WHERE clause", () => {
+    const sql = compileToSQL(`
+      schema Questions {
+        id serial pkey;
+        assessment_id integer;
+        position integer;
+        deleted_at timestamptz;
+      }
+      questions = Questions;
+      index(questions, assessment_id, position) unique where (deleted_at is null);
+    `);
+
+    expect(sql).toContain("CREATE UNIQUE INDEX idx_questions_assessment_id_position");
+    expect(sql).toContain("WHERE (deleted_at is null)");
+  });
+
+  test("parses per-instance index with where clause", () => {
+    const result = parse(`
+      index(users, email) unique where (deleted_at is null);
+    `);
+    expect(result.errors).toHaveLength(0);
+    const decl = result.ast?.declarations[0];
+    expect(decl?.type).toBe("PerInstanceIndex");
+    if (decl?.type === "PerInstanceIndex") {
+      expect(decl.unique).toBe(true);
+      expect(decl.where).toBe("deleted_at is null");
+    }
+  });
+
+  test("generates index with complex WHERE clause", () => {
+    const sql = compileToSQL(`
+      schema Items {
+        id serial pkey;
+        status text;
+        archived boolean;
+
+        index(status) where (status = 'active' and archived = false);
+      }
+      items = Items;
+    `);
+
+    expect(sql).toContain("WHERE (status = 'active' and archived = false)");
+  });
+
+  test("generates index with WHERE clause and gin index type", () => {
+    const sql = compileToSQL(`
+      schema Items {
+        id serial pkey;
+        tags jsonb;
+        deleted_at timestamptz;
+
+        index(tags) gin where (deleted_at is null);
+      }
+      items = Items;
+    `);
+
+    expect(sql).toContain("USING gin");
+    expect(sql).toContain("WHERE (deleted_at is null)");
+  });
+
+  test("generates index with WHERE clause containing template variables", () => {
+    const sql = compileToSQL(`
+      concept SoftDeletable<Target> {
+        schema Items {
+          id serial pkey;
+          {Target}_id integer;
+          position integer;
+          deleted_at timestamptz;
+
+          index({Target}_id, position) unique where (deleted_at is null);
+        }
+      }
+      schema Posts {
+        id serial pkey;
+      }
+      posts = Posts;
+      post_items = SoftDeletable<posts[post]>;
+    `);
+
+    expect(sql).toContain("CREATE UNIQUE INDEX idx_post_items_post_id_position");
+    expect(sql).toContain("WHERE (deleted_at is null)");
+  });
+});
+
 describe("Real-World Examples", () => {
   const fixtures = getFixtureNames();
 
@@ -659,6 +815,10 @@ describe("Exam System (Original Test)", () => {
 
     expect(sql).toContain("CREATE TRIGGER set_updated_at_users");
     expect(sql).toContain("CREATE TRIGGER set_updated_at_exams");
+
+    // Verify deleted_at column and partial unique index
+    expect(sql).toContain("deleted_at TIMESTAMPTZ");
+    expect(sql).toContain("WHERE (deleted_at is null)");
   });
 });
 

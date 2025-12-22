@@ -103,6 +103,7 @@ export interface PerInstanceIndex extends BaseNode {
   columns: string[];
   unique?: boolean;
   using?: string;
+  where?: string;
 }
 
 // ============================================================================
@@ -131,6 +132,7 @@ export interface IndexDef extends BaseNode {
   columns: string[];
   unique?: boolean;
   using?: string;
+  where?: string;
 }
 
 export interface CheckDef extends BaseNode {

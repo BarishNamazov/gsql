@@ -176,9 +176,12 @@ concept Assessing<Author> {
         // order of question within the assessment
         position integer nonull;
 
+        // soft delete timestamp (null = not deleted)
+        deleted_at timestamptz;
+
         index({Assessments}_id);
         index(tags) gin;
-        index({Assessments}_id, position) unique;
+        index({Assessments}_id, position) unique where (deleted_at is null);
 
         check(points is null or points >= 0);
     }

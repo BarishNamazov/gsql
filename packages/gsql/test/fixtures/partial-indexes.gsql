@@ -1,0 +1,117 @@
+// GSQL Example: Partial Indexes with WHERE clause
+// Demonstrates the use of partial/conditional indexes for soft deletes and other patterns.
+
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+}
+
+// ===
+
+// A simple SoftDeletable concept that adds soft delete capability with partial indexes
+concept SoftDeletable<Target> {
+    schema Items mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+
+        // soft delete timestamp (null = not deleted)
+        deleted_at timestamptz;
+
+        // Partial unique index - only enforced for non-deleted records
+        index({Target}_id, id) unique where (deleted_at is null);
+        index(deleted_at) where (deleted_at is not null);
+    }
+}
+
+// ===
+
+// A versioning concept where only the latest version should be unique
+concept Versioned<Owner> {
+    schema Versions mixin Timestamps {
+        id serial pkey;
+        {Owner}_id integer nonull ref(Owner.id) ondelete(cascade);
+
+        version_number integer nonull;
+        is_latest boolean nonull default(true);
+
+        content text nonull;
+
+        // Only one version can be marked as latest per owner
+        index({Owner}_id) unique where (is_latest = true);
+
+        // Regular index for version lookups
+        index({Owner}_id, version_number);
+    }
+}
+
+// ===
+
+// A queuing system with partial indexes for pending items
+schema QueueItems mixin Timestamps {
+    id serial pkey;
+
+    payload jsonb nonull;
+
+    status text nonull default('pending');
+    processed_at timestamptz;
+
+    priority integer nonull default(0);
+
+    // Index only pending items for efficient queue processing
+    index(priority, created_at) where (status = 'pending');
+
+    // Index only failed items for retry logic
+    index(created_at) where (status = 'failed');
+}
+
+// ===
+
+// Multi-tenant application with partial indexes
+concept MultiTenant<Tenant> {
+    schema Resources mixin Timestamps {
+        id serial pkey;
+        {Tenant}_id integer nonull ref(Tenant.id) ondelete(cascade);
+
+        name text nonull;
+        active boolean nonull default(true);
+
+        // Active resources have unique names within a tenant
+        index({Tenant}_id, name) unique where (active = true);
+
+        // Partial index for active resources
+        index({Tenant}_id) where (active = true);
+    }
+}
+
+// ===
+
+// Instantiations
+
+schema Users {
+    id serial pkey;
+    username text nonull unique;
+}
+users = Users;
+
+schema Posts {
+    id serial pkey;
+    author_id integer nonull ref(users.id);
+    title text nonull;
+}
+posts = Posts;
+
+post_comments = SoftDeletable<posts[post]>;
+document_versions = Versioned<posts[document]>;
+
+queue_items = QueueItems;
+
+schema Organizations {
+    id serial pkey;
+    name text nonull unique;
+}
+organizations = Organizations;
+
+org_resources = MultiTenant<organizations[org]>;
+
+// Per-instance partial index
+index(users, created_at) where (created_at is not null);

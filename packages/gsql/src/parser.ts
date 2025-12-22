@@ -27,6 +27,7 @@ import {
   Row,
   Statement,
   Execute,
+  Where,
   Function,
   Unique,
   Gin,
@@ -181,6 +182,8 @@ class GSQLCstParser extends CstParser {
       { ALT: () => this.CONSUME(Gist) },
       { ALT: () => this.CONSUME(Btree) },
       { ALT: () => this.CONSUME(Hash) },
+      // Index modifiers
+      { ALT: () => this.CONSUME(Where) },
       // Data types
       { ALT: () => this.CONSUME(Serial) },
       { ALT: () => this.CONSUME(BigSerial) },
@@ -513,7 +516,7 @@ class GSQLCstParser extends CstParser {
     this.CONSUME(RParen);
   });
 
-  // index(col1, col2) unique gin;
+  // index(col1, col2) unique gin where (condition);
   private indexDef = this.RULE("indexDef", () => {
     this.CONSUME(Index);
     this.CONSUME(LParen);
@@ -528,7 +531,18 @@ class GSQLCstParser extends CstParser {
         { ALT: () => this.CONSUME(Hash) },
       ]);
     });
+    this.OPTION(() => {
+      this.SUBRULE(this.whereClause);
+    });
     this.CONSUME(Semicolon);
+  });
+
+  // where (expression)
+  private whereClause = this.RULE("whereClause", () => {
+    this.CONSUME(Where);
+    this.CONSUME(LParen);
+    this.SUBRULE(this.checkExpression);
+    this.CONSUME(RParen);
   });
 
   private indexColumnList = this.RULE("indexColumnList", () => {
@@ -632,7 +646,7 @@ class GSQLCstParser extends CstParser {
     });
   });
 
-  // index(table, column);
+  // index(table, column) unique where (condition);
   private perInstanceIndex = this.RULE("perInstanceIndex", () => {
     this.CONSUME(Index);
     this.CONSUME(LParen);
@@ -652,6 +666,9 @@ class GSQLCstParser extends CstParser {
         { ALT: () => this.CONSUME(Btree) },
         { ALT: () => this.CONSUME(Hash) },
       ]);
+    });
+    this.OPTION(() => {
+      this.SUBRULE(this.whereClause);
     });
     this.CONSUME(Semicolon);
   });
@@ -1151,11 +1168,22 @@ class CstToAstVisitor {
     if (node.children["Btree"]) using = "btree";
     if (node.children["Hash"]) using = "hash";
 
+    // Extract where clause
+    let where: string | undefined;
+    const whereClauseNode = extractChild(node, "whereClause");
+    if (whereClauseNode) {
+      const exprNode = extractChild(whereClauseNode, "checkExpression");
+      if (exprNode) {
+        where = this.reconstructCheckExpression(exprNode);
+      }
+    }
+
     return {
       type: "IndexDef",
       columns,
       unique,
       using,
+      where,
     };
   }
 
@@ -1248,12 +1276,23 @@ class CstToAstVisitor {
     if (node.children["Btree"]) using = "btree";
     if (node.children["Hash"]) using = "hash";
 
+    // Extract where clause
+    let where: string | undefined;
+    const whereClauseNode = extractChild(node, "whereClause");
+    if (whereClauseNode) {
+      const exprNode = extractChild(whereClauseNode, "checkExpression");
+      if (exprNode) {
+        where = this.reconstructCheckExpression(exprNode);
+      }
+    }
+
     return {
       type: "PerInstanceIndex",
       tableName,
       columns,
       unique,
       using,
+      where,
     };
   }
 }

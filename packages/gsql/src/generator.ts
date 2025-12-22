@@ -309,8 +309,9 @@ function generateIndexSql(tableName: string, index: IndexDef, ctx: GeneratorCont
   const indexName = `idx_${tableName}_${columnNames}`;
   const unique = index.unique === true ? "UNIQUE " : "";
   const using = index.using ? `USING ${index.using} ` : "";
+  const where = index.where ? ` WHERE (${expandCheckExpression(index.where, ctx)})` : "";
 
-  return `CREATE ${unique}INDEX ${indexName} ON ${tableName} ${using}(${columns});`;
+  return `CREATE ${unique}INDEX ${indexName} ON ${tableName} ${using}(${columns})${where};`;
 }
 
 function generateCheckSql(_tableName: string, check: CheckDef, ctx: GeneratorContext): string {
@@ -518,6 +519,7 @@ function processPerInstanceIndex(decl: PerInstanceIndex, ctx: GeneratorContext):
     columns: decl.columns,
     unique: decl.unique,
     using: decl.using,
+    where: decl.where,
   };
 
   ctx.perInstanceIndexSql.push(generateIndexSql(decl.tableName, indexDef, ctx));

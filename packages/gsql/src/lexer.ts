@@ -155,6 +155,12 @@ export const Execute = createToken({
   longer_alt: Identifier,
 });
 
+export const Where = createToken({
+  name: "Where",
+  pattern: /where/,
+  longer_alt: Identifier,
+});
+
 export const Unique = createToken({
   name: "Unique",
   pattern: /unique/,
@@ -550,6 +556,7 @@ export const allTokens = [
   Row,
   Statement,
   Execute,
+  Where,
   Unique,
   Gin,
   Gist,
