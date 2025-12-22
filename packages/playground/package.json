@@ -1,6 +1,6 @@
 {
   "name": "gsql-playground",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Browser playground for GSQL",
   "type": "module",
   "private": true,

@@ -1,6 +1,6 @@
 {
   "name": "gsql-monorepo",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "Generic SQL - Parametric Polymorphism for SQL Schemas",
   "type": "module",
