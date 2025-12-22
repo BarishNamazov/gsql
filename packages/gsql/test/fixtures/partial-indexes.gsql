@@ -87,13 +87,13 @@ concept MultiTenant<Tenant> {
 
 // Instantiations
 
-schema Users {
+schema Users mixin Timestamps {
     id serial pkey;
     username text nonull unique;
 }
 users = Users;
 
-schema Posts {
+schema Posts mixin Timestamps {
     id serial pkey;
     author_id integer nonull ref(users.id);
     title text nonull;

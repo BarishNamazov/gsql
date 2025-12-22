@@ -848,3 +848,85 @@ describe("Per-Instantiation Indexing", () => {
     expect(tablePos).toBeLessThan(indexPos);
   });
 });
+
+describe("Compiler Error Handling", () => {
+  test("returns errors for invalid syntax", () => {
+    const result = compile("schema Users { invalid syntax here");
+    expect(result.success).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  test("compileToSQL throws error for invalid syntax", () => {
+    expect(() => compileToSQL("schema Users { invalid")).toThrow("Compilation failed");
+  });
+
+  test("handles parse errors with missing closing brace", () => {
+    const result = compile("schema Users { id serial pkey;");
+    expect(result.success).toBe(false);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  test("handles enum default value conversion", () => {
+    const sql = compileToSQL(`
+      enum status {
+        active;
+        inactive;
+      }
+      schema Test {
+        id serial pkey;
+        status status default(active);
+      }
+      test = Test;
+    `);
+    // Verify that the default value is properly formatted
+    expect(sql).toContain("DEFAULT 'active'::status");
+  });
+
+  test("handles column-level check constraint", () => {
+    const sql = compileToSQL(`
+      schema Test {
+        id serial pkey;
+        age integer check(age >= 18);
+      }
+      test = Test;
+    `);
+    expect(sql).toContain("age INTEGER CHECK (age >= 18)");
+  });
+
+  test("handles column-level check constraint with complex expression", () => {
+    const sql = compileToSQL(`
+      schema Test {
+        id serial pkey;
+        score integer check(score >= 0 and score <= 100);
+      }
+      test = Test;
+    `);
+    expect(sql).toContain("CHECK (score >= 0 and score <= 100)");
+  });
+
+  test("handles column-level check constraint with enum reference", () => {
+    const sql = compileToSQL(`
+      enum priority {
+        low;
+        high;
+      }
+      schema Task {
+        id serial pkey;
+        priority priority check(priority = priority::high or priority = priority::low);
+      }
+      tasks = Task;
+    `);
+    expect(sql).toContain("CHECK (priority = 'high'::priority or priority = 'low'::priority)");
+  });
+
+  test("handles string literal default value", () => {
+    const sql = compileToSQL(`
+      schema Test {
+        id serial pkey;
+        name text default('unknown');
+      }
+      test = Test;
+    `);
+    expect(sql).toContain("DEFAULT 'unknown'");
+  });
+});
