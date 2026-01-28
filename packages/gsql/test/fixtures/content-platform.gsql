@@ -1,0 +1,82 @@
+schema Timestamps {
+    created_at timestamptz nonull default(NOW());
+    updated_at timestamptz nonull default(NOW());
+}
+
+concept Commenting<Target> {
+    schema Comments mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+
+        author_name varchar(100) nonull;
+        body text nonull;
+        parent_id integer ref(Comments.id) ondelete(cascade);
+
+        index({Target}_id);
+        index(parent_id);
+    }
+}
+
+concept Tagging<Target> {
+    schema Tags {
+        id serial pkey;
+        name varchar(50) nonull unique;
+    }
+
+    schema Taggings mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+        {Tags}_id integer nonull ref(Tags.id) ondelete(cascade);
+
+        index({Target}_id, {Tags}_id) unique;
+    }
+}
+
+concept Discussing<Target> {
+    schema Threads mixin Timestamps {
+        id serial pkey;
+        {Target}_id integer nonull ref(Target.id) ondelete(cascade);
+
+        title varchar(200) nonull;
+        author_name varchar(100) nonull;
+        is_pinned boolean nonull default(false);
+
+        index({Target}_id);
+    }
+
+    schema Replies mixin Timestamps {
+        id serial pkey;
+        {Threads}_id integer nonull ref(Threads.id) ondelete(cascade);
+
+        author_name varchar(100) nonull;
+        body text nonull;
+
+        index({Threads}_id);
+    }
+}
+
+schema Articles mixin Timestamps {
+    id serial pkey;
+    title varchar(200) nonull;
+    body text nonull;
+    published boolean nonull default(false);
+}
+
+schema Videos mixin Timestamps {
+    id serial pkey;
+    title varchar(200) nonull;
+    url text nonull;
+    duration_seconds integer;
+}
+
+articles = Articles;
+videos   = Videos;
+
+article_comments = Commenting<articles[article]>;
+video_comments   = Commenting<videos[video]>;
+
+article_tags, article_taggings = Tagging<articles[article]>;
+video_tags, video_taggings     = Tagging<videos[video]>;
+
+article_threads[article_thread], article_replies = Discussing<articles[article]>;
+video_threads[video_thread], video_replies     = Discussing<videos[video]>;

@@ -34,6 +34,7 @@ const files = [
   "ecommerce-platform.gsql",
   "exam-system.gsql",
   "task-management.gsql",
+  "content-platform.gsql",
 ];
 
 for (const file of files) {
